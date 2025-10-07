@@ -23,3 +23,18 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# Video conversion - FFmpeg bindings
+ffmpeg-next = "7.1"
+
+# Image conversion - comprehensive format support with quality control
+# Supports: jpg, png, webp (lossless/lossy), avif, gif, bmp, tiff, tga, etc.
+# Quality settings available for jpeg, webp, png compression
+image = { version = "0.25", features = ["webp", "avif", "jpeg", "png", "gif", "bmp", "tiff"] }
+
+# SVG rendering and conversion
+resvg = "0.44"
+usvg = "0.44"
+
+# HEIC/HEIF support
+libheif-rs = "1.0"
+
