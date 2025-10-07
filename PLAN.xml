@@ -1,10 +1,16 @@
 <App>
-다양한 이미지 간의 포맷 전환 및 비디오 포맷의 converting을 지원하는 앱
-MacOS, Windows에 유료로 배포 예정, Pro 모드와 trial 모드 예정.
+다양한 이미지 간의 포맷 전환 및 비디오 포맷의 converting을 지원하는 앱.
+MacOS, Windows에 유료로 배포 예정, Pro 모드와 일반 모드 예정, 일반 모드는 제한된 개수 하루에 가능.
 </App>
 
 <Prerequisite>
 - React 19
+- Tailwind v4 + tailwind Merge  + clsx
+- 필요시 zod
+- 필요시 React Query
+- lodash-es
+- Effect.ts
+- HTML5 Semantic 준수
 - Tauri
 - Context7 MCP 적극 활용
 </Prerequisite>
@@ -17,9 +23,10 @@ MacOS, Windows에 유료로 배포 예정, Pro 모드와 trial 모드 예정.
 </uiTool>
 
 <techStack>
-- 변환 툴은 러스트를 활용
+- 변환 툴은 성능을 위해 러스트를 활용
 - 러스트의 이미지 변환 툴, 영상 변환 ffmpeg 사용.
 - 이미지 변환 툴의 경우 node.js의 sharp처럼 다앙햔 포맷을 지원하는 all-in-one 툴 탐색 필요
+- Context7 MCP 적극 활용
 </techStack>
 
 <code>
