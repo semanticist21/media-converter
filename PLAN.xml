@@ -1,5 +1,6 @@
 <App>
 다양한 이미지 간의 포맷 전환 및 비디오 포맷의 converting을 지원하는 앱
+MacOS, Windows에 유료로 배포 예정, Pro 모드와 trial 모드 예정.
 </App>
 
 <Prerequisite>
@@ -26,8 +27,9 @@ CONVENTION.MD를 준수하여 작성
 </code>
 
 <features>
+- 현재는 유료/무료 버전 구분 없음. 기능 구현에 집중
 - 이미지 포맷 변환 (jpg, png, webp, heic, avif 등)
-- 비디오 포맷 변환 (mp4, mov, avi 등)
+- 비디오 포맷 변환 (mp4, mov, avi 등, ffmpeg 지원 포맷)
 - 배치 변환 지원
 - 히스토리 지원, 카토게리별 필터링 지원
 - 포맷 일괄 변환 및 사이즈 일괄 변환 지원
