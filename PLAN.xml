@@ -1,0 +1,48 @@
+<App>
+다양한 이미지 간의 포맷 전환 및 비디오 포맷의 converting을 지원하는 앱
+</App>
+
+<Prerequisite>
+- React 19
+- Tauri
+- Context7 MCP 적극 활용
+</Prerequisite>
+
+<UiTool>
+- Shadcn Green Theme 적용
+- Responsive UI를 위해 cult ui 사용 가능
+- best practices for UI/UX
+- Context7 MCP로 참고하여 구성
+</uiTool>
+
+<techStack>
+- 변환 툴은 러스트를 활용
+- 러스트의 이미지 변환 툴, 영상 변환 ffmpeg 사용.
+- 이미지 변환 툴의 경우 node.js의 sharp처럼 다앙햔 포맷을 지원하는 all-in-one 툴 탐색 필요
+</techStack>
+
+<code>
+CONVENTION.MD를 준수하여 작성
+</code>
+
+<features>
+- 이미지 포맷 변환 (jpg, png, webp, heic, avif 등)
+- 비디오 포맷 변환 (mp4, mov, avi 등)
+- 배치 변환 지원
+- 히스토리 지원, 카토게리별 필터링 지원
+- 포맷 일괄 변환 및 사이즈 일괄 변환 지원
+- 드래그 앤 드롭 지원
+- 작업 완료 후 다운로드
+- 작업 중단 후 재시작 지원
+- 지원 사이트 "https://www.kobbokkom.com"
+- 다크 모드 지원
+- 다국어 지원 (한국어, 영어)
+- 사용자 설정 저장 필요 (최근 포맷, 최근 사이즈 등)
+- 이미지 워터마크 추가 기능(TOBE)
+- 기타 필요에 따라 위의 항목에 없는 것을 새로 추가하거나 삭제하여 구현 가능
+</features>
+
+<target>
+- MacOS
+- Windows
+</target>
