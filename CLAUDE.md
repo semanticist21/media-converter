@@ -67,6 +67,12 @@ bun typecheck     # TypeScript type checking (alias for tsgo --noEmit)
 - **Inline handlers for non-reusable logic**: Keep simple handlers inline unless reused
 - **Use `useId()` for element IDs**: Never use static string IDs to avoid duplicate IDs when component is rendered multiple times
 
+### UI Component Patterns
+- **Radix UI Primitives**: Base for all interactive components (Dialog, Dropdown, Separator, etc.)
+- **Class Variance Authority (CVA)**: Define component variants with `cva()` for consistent styling
+- **cn() Utility**: Always use `cn()` from `@/lib/utils` to merge Tailwind classes safely
+- **Slot Pattern**: Use `<Slot>` from Radix for polymorphic components (e.g., `asChild` prop)
+
 ## Project Structure
 
 ```
@@ -75,7 +81,11 @@ anyimage-converter/
 │   ├── app.tsx            # Main React component (kebab-case)
 │   ├── main.tsx           # React app entry point
 │   ├── index.css          # Global styles + Tailwind CSS v4
-│   ├── lib/               # Utility functions
+│   ├── components/        # React components
+│   │   ├── ui/            # Reusable UI primitives (Button, Dropdown, etc.)
+│   │   ├── layout/        # Layout components (Main, Footer)
+│   │   └── toolbar.tsx    # Feature components
+│   ├── lib/               # Utility functions (cn() helper)
 │   └── assets/            # Static assets (images, etc.)
 ├── src-tauri/             # Rust backend source
 │   ├── src/
@@ -89,6 +99,10 @@ anyimage-converter/
 ├── biome.json             # Biome linter/formatter configuration
 └── CONVENTION.md          # Code conventions reference
 ```
+
+**Path Aliases**:
+- `@/*` maps to `./src/*` (configured in `tsconfig.json` and `vite.config.ts`)
+- Use absolute imports: `import {cn} from "@/lib/utils"`
 
 ## Adding Tauri Commands (Rust ↔ React Communication)
 
@@ -159,8 +173,11 @@ HMR (Hot Module Reload) uses port 1421 for WebSocket communication with Tauri.
 **Frontend**:
 - React 19.1
 - TypeScript 7.0 (native preview via `@typescript/native-preview`)
-- Tailwind CSS v4
+- Tailwind CSS v4 with `tailwindcss-animate` plugin
 - Vite 7.0
+- UI Components: Radix UI primitives + custom components
+- Styling: `clsx` + `tailwind-merge` via `cn()` utility
+- Icons: Lucide React
 
 **Backend (Rust)**:
 - Tauri 2
@@ -199,14 +216,13 @@ For app-wide state shared between Rust and React, use Tauri's state management o
 
 ## Theme Management
 
-**System Theme Integration**: The app follows system theme preferences automatically.
+**System Theme Integration**: Managed by `next-themes` package with class-based dark mode.
 
-- `tauri.conf.json` has no explicit `theme` field → follows system theme
-- CSS uses `@media (prefers-color-scheme: dark)` for theme-specific styles
-- Background colors in `src/index.css`:
-  - Light mode: `#f6f6f6`
-  - Dark mode: `#2f2f2f`
-- Native window title bar color automatically matches system theme
+- **Theme Provider**: Uses `next-themes` for theme state management
+- **Dark Mode Implementation**: `.dark` class on root element (not media queries)
+- **CSS Variables**: Theme colors defined in `src/index.css` using oklch color space
+- **System Detection**: Automatically detects and respects system theme preference
+- **Custom Variant**: Uses `@custom-variant dark (&:is(.dark *))` for Tailwind v4 dark mode
 
 ## Testing Strategy
 
