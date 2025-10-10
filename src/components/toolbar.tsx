@@ -1,4 +1,4 @@
-import {FolderOpen, Info, ScrollText, Trash2} from "lucide-react";
+import {Info, Plus, ScrollText, Trash2} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {ButtonGroup, ButtonGroupSeparator} from "@/components/ui/button-group";
 import {
@@ -45,8 +45,8 @@ export function Toolbar() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" aria-label="Upload files">
-                <FolderOpen className="fill-amber-100 text-amber-500" />
-                Upload
+                <Plus className="fill-lime-100 text-lime-500" />
+                Add
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
