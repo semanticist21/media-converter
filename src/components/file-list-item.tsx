@@ -1,3 +1,4 @@
+import dayjs from "dayjs";
 import {filesize} from "filesize";
 import {FileImage, X} from "lucide-react";
 import {Button} from "@/components/ui/button";
@@ -12,18 +13,23 @@ export function FileListItem({file}: FileListItemProps) {
   const removeFile = useFileStore((state) => state.removeFile);
 
   return (
-    <div className="flex items-center gap-3 rounded-lg border bg-card p-3 text-card-foreground shadow-sm transition-colors hover:bg-accent/50">
+    <div className="flex items-center gap-4 border-b bg-card p-4 text-card-foreground transition-colors hover:bg-accent/50">
       {/* 파일 아이콘 */}
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted">
-        <FileImage className="size-5 text-muted-foreground" />
+      <div className="flex size-12 shrink-0 items-center justify-center rounded-md bg-muted">
+        <FileImage className="size-6 text-muted-foreground" />
       </div>
 
       {/* 파일 정보 */}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{file.name}</p>
+        <p className="mb-1 line-clamp-1 text-sm font-medium">{file.name}</p>
+        {file.path && (
+          <p className="line-clamp-1 text-xs text-muted-foreground">
+            {file.path}
+          </p>
+        )}
         <p className="text-xs text-muted-foreground">
-          {filesize(file.size)}
-          {file.path && ` • ${file.path}`}
+          {filesize(file.size)} •{" "}
+          {dayjs(file.lastModified).format("YY.MM.DD HH:mm:ss")}
         </p>
       </div>
 

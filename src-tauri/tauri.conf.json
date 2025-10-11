@@ -14,7 +14,10 @@
       {
         "title": "AnyImage Converter",
         "width": 600,
-        "height": 700
+        "height": 700,
+        "minWidth": 500,
+        "maxWidth": 800,
+        "minHeight": 400
       }
     ],
     "security": {

@@ -6,6 +6,7 @@ export interface FileItem {
   name: string;
   size: number;
   type: string;
+  lastModified: number; // 파일 수정 시간 (타임스탬프)
   path?: string; // Tauri 파일 경로 (로컬 파일의 경우)
   preview?: string; // 이미지 미리보기 URL (추후 사용)
 }
@@ -34,6 +35,7 @@ export const useFileStore = create<FileStore>((set) => ({
           name: file.name,
           size: file.size,
           type: file.type,
+          lastModified: file.lastModified,
           path: paths?.[index],
         }))
         .filter((item) => !item.path || !existingPaths.has(item.path));

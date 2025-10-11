@@ -2,7 +2,9 @@ import {getCurrentWindow} from "@tauri-apps/api/window";
 import {readFile} from "@tauri-apps/plugin-fs";
 import {Upload} from "lucide-react";
 import {useEffect, useState} from "react";
+import {OverlayScrollbarsComponent} from "overlayscrollbars-react";
 import {FileListItem} from "@/components/file-list-item";
+import {cn} from "@/lib/utils";
 import {useFileStore} from "@/stores/file-store";
 
 export function Main() {
@@ -58,27 +60,43 @@ export function Main() {
   }, [addFiles]);
 
   return (
-    <main className="flex flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable] bg-muted/80">
-      {fileList.length > 0 ? (
-        <div className="m-4 flex flex-col gap-2">
-          {fileList.map((file) => (
-            <FileListItem key={file.id} file={file} />
-          ))}
-        </div>
-      ) : (
-        <div className="m-4 flex flex-1 flex-col items-center justify-center rounded-lg transition-colors">
-          <Upload className="mb-4 size-12 text-muted-foreground/40" />
-          {isDragActive ? (
-            <p className="text-lg text-muted-foreground/60">
-              Drop the files here...
-            </p>
-          ) : (
-            <p className="text-lg font-medium text-muted-foreground/50">
-              Drag and drop images here
-            </p>
-          )}
-        </div>
+    <OverlayScrollbarsComponent
+      element="main"
+      options={{
+        scrollbars: {
+          autoHide: "move",
+          autoHideDelay: 800,
+        },
+      }}
+      defer
+      className={cn(
+        "flex flex-1 flex-col bg-muted/80 transition-colors",
+        isDragActive &&
+          "bg-muted/60 outline-2 outline-dashed outline-primary/50",
       )}
-    </main>
+    >
+      <div className="flex min-h-full flex-col">
+        {fileList.length > 0 ? (
+          <div className="flex flex-col">
+            {fileList.map((file) => (
+              <FileListItem key={file.id} file={file} />
+            ))}
+          </div>
+        ) : (
+          <div className="m-4 flex flex-1 flex-col items-center justify-center rounded-lg transition-colors">
+            <Upload className="mb-4 size-12 text-muted-foreground/40" />
+            {isDragActive ? (
+              <p className="text-lg text-muted-foreground/60">
+                Drop the files here...
+              </p>
+            ) : (
+              <p className="text-lg font-medium text-muted-foreground/50">
+                Drag and drop images here
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </OverlayScrollbarsComponent>
   );
 }

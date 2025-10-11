@@ -5,7 +5,7 @@ import "./index.css";
 
 export default function App() {
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex h-screen flex-col">
       <Toolbar />
       <Main />
       <Footer />

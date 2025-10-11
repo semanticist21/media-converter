@@ -1,0 +1,43 @@
+/* 모던 스크롤바 CSS 변수 */
+:root {
+  --scrollbar-width: 8px;
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: oklch(0.556 0 0 / 0.2);
+  --scrollbar-thumb-hover: oklch(0.556 0 0 / 0.4);
+  --scrollbar-radius: 4px;
+}
+
+.dark {
+  --scrollbar-thumb: oklch(0.556 0 0 / 0.3);
+  --scrollbar-thumb-hover: oklch(0.556 0 0 / 0.5);
+}
+
+/* OverlayScrollbars 커스텀 스타일 */
+.os-scrollbar {
+  --os-size: var(--scrollbar-width);
+  --os-padding-perpendicular: 2px;
+  --os-padding-axis: 2px;
+  --os-track-border-radius: var(--scrollbar-radius);
+  --os-handle-border-radius: var(--scrollbar-radius);
+  --os-handle-bg: var(--scrollbar-thumb);
+  --os-handle-bg-hover: var(--scrollbar-thumb-hover);
+  --os-handle-bg-active: var(--scrollbar-thumb-hover);
+}
+
+.os-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+.os-scrollbar-handle {
+  background: var(--os-handle-bg);
+  border-radius: var(--os-handle-border-radius);
+  transition: background 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.os-scrollbar-handle:hover {
+  background: var(--os-handle-bg-hover);
+}
+
+.os-scrollbar-handle:active {
+  background: var(--os-handle-bg-active);
+}
