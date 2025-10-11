@@ -1,5 +1,6 @@
+import {invoke} from "@tauri-apps/api/core";
 import {AnimatePresence, motion} from "framer-motion";
-import {Check, Link, X} from "lucide-react";
+import {AlertCircle, Check, Link, X} from "lucide-react";
 import {useState} from "react";
 import {Button} from "@/components/ui/button";
 import {
@@ -11,7 +12,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {Input} from "@/components/ui/input";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {normalizeUrl, validateUrl} from "@/lib/url-utils";
+import type {ExifData} from "@/stores/file-store";
 import {useFileStore} from "@/stores/file-store";
 
 interface AddUrlDialogProps {
@@ -19,53 +27,53 @@ interface AddUrlDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+interface FetchImageResult {
+  data: number[];
+  content_type: string;
+  file_name: string;
+  exif: ExifData | null;
+}
+
 export function AddUrlDialog({isOpen, onOpenChange}: AddUrlDialogProps) {
   const addFiles = useFileStore((state) => state.addFiles);
   const [url, setUrl] = useState("");
   const [isValidUrl, setIsValidUrl] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleAddFromUrl = async () => {
     if (!validateUrl(url)) return;
     const normalizedUrl = normalizeUrl(url);
 
     setIsLoading(true);
+    setErrorMessage(null);
+
     try {
-      const response = await fetch(normalizedUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch image (${response.status})`);
-      }
+      // Fetch image from Rust backend to avoid CORS issues
+      const result = await invoke<FetchImageResult>("fetch_image_from_url", {
+        url: normalizedUrl,
+      });
 
-      const blob = await response.blob();
-      const responseType =
-        blob.type ||
-        response.headers.get("content-type") ||
-        "application/octet-stream";
+      // Convert number array to Uint8Array
+      const uint8Array = new Uint8Array(result.data);
+      const blob = new Blob([uint8Array], {type: result.content_type});
+      const file = new File([blob], result.file_name, {
+        type: result.content_type,
+      });
 
-      let fileName = "image";
-      try {
-        const {pathname} = new URL(normalizedUrl);
-        const candidate = pathname.split("/").filter(Boolean).pop();
-        if (candidate) {
-          fileName = candidate;
-        }
-      } catch {
-        // Ignore invalid URL parsing errors and keep default filename
-      }
+      // Add file to store with URL metadata and EXIF data
+      addFiles([file], undefined, [normalizedUrl], [result.exif]);
 
-      if (!fileName.includes(".")) {
-        const inferredExt = responseType.split("/")[1]?.split(";")[0];
-        if (inferredExt) {
-          fileName = `${fileName}.${inferredExt}`;
-        }
-      }
-
-      const file = new File([blob], fileName, {type: responseType});
-      addFiles([file]);
+      // Close modal and reset state
       onOpenChange(false);
       setUrl("");
       setIsValidUrl(false);
+      setErrorMessage(null);
     } catch (error) {
+      // Set error message for display
+      const message =
+        typeof error === "string" ? error : "Failed to fetch image from URL";
+      setErrorMessage(message);
       console.error("Failed to fetch image from URL:", error);
     } finally {
       setIsLoading(false);
@@ -91,6 +99,10 @@ export function AddUrlDialog({isOpen, onOpenChange}: AddUrlDialogProps) {
                 const newUrl = e.target.value;
                 setUrl(newUrl);
                 setIsValidUrl(validateUrl(newUrl));
+                // 사용자가 입력을 수정하면 에러 상태 초기화
+                if (errorMessage) {
+                  setErrorMessage(null);
+                }
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && isValidUrl && !isLoading) {
@@ -101,7 +113,30 @@ export function AddUrlDialog({isOpen, onOpenChange}: AddUrlDialogProps) {
             />
             <div className="shrink-0">
               <AnimatePresence mode="wait">
-                {url.trim() ? (
+                {errorMessage ? (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <motion.div
+                          key="error"
+                          initial={{opacity: 0, scale: 0.8}}
+                          animate={{opacity: 1, scale: 1}}
+                          exit={{opacity: 0, scale: 0.8}}
+                          transition={{
+                            type: "spring",
+                            stiffness: 700,
+                            damping: 25,
+                          }}
+                        >
+                          <AlertCircle className="size-5 text-red-500" />
+                        </motion.div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{errorMessage}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                ) : url.trim() ? (
                   isValidUrl ? (
                     <motion.div
                       key="valid"
@@ -146,6 +181,7 @@ export function AddUrlDialog({isOpen, onOpenChange}: AddUrlDialogProps) {
               onOpenChange(false);
               setUrl("");
               setIsValidUrl(false);
+              setErrorMessage(null);
             }}
             disabled={isLoading}
           >
@@ -158,7 +194,7 @@ export function AddUrlDialog({isOpen, onOpenChange}: AddUrlDialogProps) {
             disabled={!isValidUrl || isLoading}
             loading={isLoading}
           >
-            Add Image
+            {errorMessage ? "Retry" : "Add Image"}
           </Button>
         </DialogFooter>
       </DialogContent>

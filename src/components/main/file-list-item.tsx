@@ -1,6 +1,5 @@
-import dayjs from "dayjs";
 import {filesize} from "filesize";
-import {X} from "lucide-react";
+import {Camera, X} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {
   formatExtensionDisplay,
@@ -33,15 +32,20 @@ export function FileListItem({file}: FileListItemProps) {
       {/* 파일 정보 */}
       <div className="min-w-0 flex-1">
         <p className="mb-1 line-clamp-1 text-sm font-medium">{file.name}</p>
-        {file.path && (
+        {(file.url || file.path) && (
           <p className="line-clamp-1 text-xs text-muted-foreground">
-            {file.path}
+            {file.url || file.path}
           </p>
         )}
-        <p className="text-xs text-muted-foreground">
-          {filesize(file.size)} •{" "}
-          {dayjs(file.lastModified).format("YY.MM.DD HH:mm:ss")}
-        </p>
+        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground/70">
+          <span>{filesize(file.size)}</span>
+          {file.exif && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-blue-600 dark:bg-blue-400/10 dark:text-blue-400">
+              <Camera className="size-3" />
+              <span className="text-[10px] font-medium">EXIF</span>
+            </span>
+          )}
+        </div>
       </div>
 
       {/* 삭제 버튼 */}
