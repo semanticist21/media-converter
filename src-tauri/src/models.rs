@@ -37,6 +37,7 @@ pub struct FileItem {
     pub exif_raw_bytes: Option<Vec<u8>>, // Raw EXIF data for preservation
     pub timestamps: Option<FileTimestamps>,
     pub converted: bool,
+    pub converted_path: Option<String>, // Path where converted file was saved
 }
 
 // Response type for frontend (no image bytes)
@@ -50,6 +51,7 @@ pub struct FileItemResponse {
     pub source_url: Option<String>,
     pub exif: Option<ExifData>,
     pub converted: bool,
+    pub converted_path: Option<String>, // Path where converted file was saved
 }
 
 impl FileItem {
@@ -63,6 +65,7 @@ impl FileItem {
             source_url: self.source_url.clone(),
             exif: self.exif.clone(),
             converted: self.converted,
+            converted_path: self.converted_path.clone(),
         }
     }
 }
@@ -85,4 +88,6 @@ pub struct ConversionProgress {
     pub status: String, // "converting" | "completed" | "error" | "skipped"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_message: Option<String>, // Error message for failed conversions
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub saved_path: Option<String>, // Path where converted file was saved
 }

@@ -110,9 +110,7 @@ export function AddUrlDialog({isOpen, onOpenChange}: AddUrlDialogProps) {
                           <AlertCircle className="size-5 text-red-500" />
                         </motion.div>
                       </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{errorMessage}</p>
-                      </TooltipContent>
+                      <TooltipContent>{errorMessage}</TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
                 ) : url.trim() ? (

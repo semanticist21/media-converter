@@ -82,9 +82,7 @@ export function Footer() {
             <span className="text-sm font-medium">Format:</span>
             <Select
               value={targetFormat}
-              onValueChange={(value) =>
-                setTargetFormat(value as ImageFormat)
-              }
+              onValueChange={(value) => setTargetFormat(value as ImageFormat)}
             >
               <SelectTrigger className="w-32">
                 <SelectValue />
@@ -224,7 +222,9 @@ export function Footer() {
                       <Checkbox
                         id={exifCheckboxId}
                         checked={preserveExif}
-                        onCheckedChange={(checked) => setPreserveExif(checked === true)}
+                        onCheckedChange={(checked) =>
+                          setPreserveExif(checked === true)
+                        }
                       />
                       <label
                         htmlFor={exifCheckboxId}
@@ -298,8 +298,8 @@ export function Footer() {
                 <TooltipContent>
                   <p className="max-w-xs">
                     Save converted images in the same folder as the original
-                    files. Additional subfolder options available in Settings. If
-                    unchecked, you will be asked to select an output folder.
+                    files. Additional subfolder options available in Settings.
+                    If unchecked, you will be asked to select an output folder.
                   </p>
                 </TooltipContent>
               </Tooltip>

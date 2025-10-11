@@ -67,6 +67,7 @@ pub fn add_file_from_path(
         exif_raw_bytes,
         timestamps,
         converted: false,
+        converted_path: None,
     };
 
     let response = file_item.to_response();
@@ -96,6 +97,14 @@ pub async fn add_file_from_url(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("application/octet-stream")
         .to_string();
+
+    // Validate that content type is an image
+    if !content_type.starts_with("image/") {
+        return Err(format!(
+            "URL does not point to an image (content-type: {})",
+            content_type
+        ));
+    }
 
     // Extract file name from URL
     let mut file_name = url
@@ -140,6 +149,7 @@ pub async fn add_file_from_url(
         exif_raw_bytes,
         timestamps: None,
         converted: false,
+        converted_path: None,
     };
 
     let response = file_item.to_response();
@@ -298,6 +308,7 @@ pub async fn convert_images(
                         file_name: name.clone(),
                         status: "converting".to_string(),
                         error_message: None,
+                        saved_path: None,
                     },
                 );
 
@@ -334,6 +345,7 @@ pub async fn convert_images(
                                                                 file_name: name.clone(),
                                                                 status: "error".to_string(),
                                                                 error_message: Some(error_msg.clone()),
+                                                                saved_path: None,
                                                             },
                                                         );
                                                         eprintln!("{}", error_msg);
@@ -362,6 +374,7 @@ pub async fn convert_images(
                                                                 file_name: name.clone(),
                                                                 status: "error".to_string(),
                                                                 error_message: Some(error_msg.clone()),
+                                                                saved_path: None,
                                                             },
                                                         );
                                                         eprintln!("{}", error_msg);
@@ -395,6 +408,7 @@ pub async fn convert_images(
                                                                 file_name: name.clone(),
                                                                 status: "error".to_string(),
                                                                 error_message: Some(error_msg.clone()),
+                                                                saved_path: None,
                                                             },
                                                         );
                                                         eprintln!("{}", error_msg);
@@ -427,6 +441,7 @@ pub async fn convert_images(
                                                                 file_name: name.clone(),
                                                                 status: "error".to_string(),
                                                                 error_message: Some(error_msg.clone()),
+                                                                saved_path: None,
                                                             },
                                                         );
                                                         eprintln!("{}", error_msg);
@@ -455,6 +470,7 @@ pub async fn convert_images(
                                                                 file_name: name.clone(),
                                                                 status: "error".to_string(),
                                                                 error_message: Some(error_msg.clone()),
+                                                                saved_path: None,
                                                             },
                                                         );
                                                         eprintln!("{}", error_msg);
@@ -483,6 +499,7 @@ pub async fn convert_images(
                                                                 file_name: name.clone(),
                                                                 status: "error".to_string(),
                                                                 error_message: Some(error_msg.clone()),
+                                                                saved_path: None,
                                                             },
                                                         );
                                                         eprintln!("{}", error_msg);
@@ -501,6 +518,7 @@ pub async fn convert_images(
                                                 file_name: name.clone(),
                                                 status: "error".to_string(),
                                                 error_message: Some(error_msg.clone()),
+                                                saved_path: None,
                                             },
                                         );
                                         eprintln!("{}", error_msg);
@@ -518,6 +536,7 @@ pub async fn convert_images(
                                         file_name: name.clone(),
                                         status: "error".to_string(),
                                         error_message: Some(error_msg.clone()),
+                                        saved_path: None,
                                     },
                                 );
                                 eprintln!("{}", error_msg);
@@ -563,6 +582,7 @@ pub async fn convert_images(
                                                         file_name: name.clone(),
                                                         status: "error".to_string(),
                                                         error_message: Some(error_msg.clone()),
+                                                        saved_path: None,
                                                     },
                                                 );
                                                 eprintln!("{}", error_msg);
@@ -587,6 +607,7 @@ pub async fn convert_images(
                                             file_name: name.clone(),
                                             status: "error".to_string(),
                                             error_message: Some(error_msg.clone()),
+                                            saved_path: None,
                                         },
                                     );
                                     eprintln!("{}", error_msg);
@@ -609,6 +630,7 @@ pub async fn convert_images(
                                                 file_name: name.clone(),
                                                 status: "error".to_string(),
                                                 error_message: Some(error_msg.clone()),
+                                                saved_path: None,
                                             },
                                         );
                                         eprintln!("{}", error_msg);
@@ -633,6 +655,7 @@ pub async fn convert_images(
                                                 file_name: name.clone(),
                                                 status: "error".to_string(),
                                                 error_message: Some(error_msg.clone()),
+                                                saved_path: None,
                                             },
                                         );
                                         eprintln!("{}", error_msg);
@@ -660,6 +683,7 @@ pub async fn convert_images(
                             file_name: name.clone(),
                             status: "skipped".to_string(),
                             error_message: Some("File already exists".to_string()),
+                            saved_path: None,
                         },
                     );
                     return None;
@@ -682,6 +706,7 @@ pub async fn convert_images(
                                 file_name: name.clone(),
                                 status: "error".to_string(),
                                 error_message: Some(error_msg.clone()),
+                                saved_path: None,
                             },
                         );
                         eprintln!("{}", error_msg);
@@ -697,6 +722,7 @@ pub async fn convert_images(
                                     file_name: name.clone(),
                                     status: "error".to_string(),
                                     error_message: Some(e.clone()),
+                                    saved_path: None,
                                 },
                             );
                             eprintln!("{}", e);
@@ -713,6 +739,7 @@ pub async fn convert_images(
                                     file_name: name.clone(),
                                     status: "error".to_string(),
                                     error_message: Some(e.clone()),
+                                    saved_path: None,
                                 },
                             );
                             eprintln!("{}", e);
@@ -729,6 +756,7 @@ pub async fn convert_images(
                                     file_name: name.clone(),
                                     status: "error".to_string(),
                                     error_message: Some(e.clone()),
+                                    saved_path: None,
                                 },
                             );
                             eprintln!("{}", e);
@@ -745,6 +773,7 @@ pub async fn convert_images(
                                     file_name: name.clone(),
                                     status: "error".to_string(),
                                     error_message: Some(e.clone()),
+                                    saved_path: None,
                                 },
                             );
                             eprintln!("{}", e);
@@ -768,6 +797,7 @@ pub async fn convert_images(
                                         file_name: name.clone(),
                                         status: "error".to_string(),
                                         error_message: Some(error_msg.clone()),
+                                        saved_path: None,
                                     },
                                 );
                                 eprintln!("{}", error_msg);
@@ -789,6 +819,7 @@ pub async fn convert_images(
                                         file_name: name.clone(),
                                         status: "error".to_string(),
                                         error_message: Some(error_msg.clone()),
+                                        saved_path: None,
                                     },
                                 );
                                 eprintln!("{}", error_msg);
@@ -808,6 +839,7 @@ pub async fn convert_images(
                                         file_name: name.clone(),
                                         status: "error".to_string(),
                                         error_message: Some(error_msg.clone()),
+                                        saved_path: None,
                                     },
                                 );
                                 eprintln!("{}", error_msg);
@@ -827,6 +859,7 @@ pub async fn convert_images(
                             file_name: name.clone(),
                             status: "error".to_string(),
                             error_message: Some(error_msg.clone()),
+                            saved_path: None,
                         },
                     );
                     eprintln!("{}", error_msg);
@@ -852,14 +885,16 @@ pub async fn convert_images(
                         file_name: name.clone(),
                         status: "completed".to_string(),
                         error_message: None,
+                        saved_path: Some(output_path.to_string_lossy().to_string()),
                     },
                 );
 
-                // Mark file as converted immediately
+                // Mark file as converted immediately and store converted path
                 {
                     let mut file_list = state_clone.lock().unwrap();
                     if let Some(file) = file_list.iter_mut().find(|f| f.id == id) {
                         file.converted = true;
+                        file.converted_path = Some(output_path.to_string_lossy().to_string());
                     }
                 }
 

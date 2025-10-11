@@ -65,9 +65,7 @@ export function ToolbarThemeToggleButton() {
             </motion.div>
           </Button>
         </TooltipTrigger>
-        <TooltipContent>
-          <p className="text-xs">Toggle between light and dark mode</p>
-        </TooltipContent>
+        <TooltipContent>Toggle between light and dark mode</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );

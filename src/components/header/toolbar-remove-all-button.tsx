@@ -25,13 +25,9 @@ export function ToolbarRemoveAllButton() {
             Remove
           </Button>
         </TooltipTrigger>
-        <TooltipContent>
-          <p className="text-xs">
-            Remove all files from the list.{" "}
-            <strong>
-              Files currently being converted will not be removed.
-            </strong>
-          </p>
+        <TooltipContent className="max-w-xs">
+          Remove all files from the list.{" "}
+          <b>Files currently being converted will not be removed.</b>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

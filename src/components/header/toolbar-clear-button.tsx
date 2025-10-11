@@ -26,9 +26,7 @@ export function ToolbarClearButton() {
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          <p className="text-xs">
-            Remove all successfully converted files from the list
-          </p>
+          Remove all successfully converted files from the list
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

@@ -32,6 +32,7 @@ export interface FileItemResponse {
   source_url?: string;
   exif?: ExifData;
   converted: boolean;
+  converted_path?: string; // Path where converted file was saved
 }
 
 export interface ConversionProgress {
@@ -39,6 +40,7 @@ export interface ConversionProgress {
   file_name: string;
   status: "converting" | "completed" | "error" | "skipped";
   error_message?: string; // Error message for failed conversions or skip reason
+  saved_path?: string; // Path where converted file was saved
 }
 
 interface FileListContextType {
