@@ -64,14 +64,31 @@ bun typecheck     # TypeScript type checking (alias for tsgo --noEmit)
 - **Line width**: 80 characters
 
 ### React Patterns
+- **React 19 - No forwardRef**: React 19 automatically forwards refs, never use `React.forwardRef`
 - **Inline handlers for non-reusable logic**: Keep simple handlers inline unless reused
 - **Use `useId()` for element IDs**: Never use static string IDs to avoid duplicate IDs when component is rendered multiple times
+- **Comments in Korean**: Code comments should be written in Korean
 
 ### UI Component Patterns
 - **Radix UI Primitives**: Base for all interactive components (Dialog, Dropdown, Separator, etc.)
+- **React 19 Component Pattern**: Use regular function components with `data-slot` attributes instead of `forwardRef`
+  ```typescript
+  // ✅ Correct - React 19 pattern
+  function Input({className, type, ...props}: React.ComponentProps<"input">) {
+    return <input type={type} data-slot="input" className={cn(...)} {...props} />;
+  }
+
+  // ❌ Wrong - Old React 18 pattern
+  const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
+    ({ className, type, ...props }, ref) => {
+      return <input ref={ref} type={type} className={cn(...)} {...props} />;
+    }
+  );
+  ```
 - **Class Variance Authority (CVA)**: Define component variants with `cva()` for consistent styling
 - **cn() Utility**: Always use `cn()` from `@/lib/utils` to merge Tailwind classes safely
 - **Slot Pattern**: Use `<Slot>` from Radix for polymorphic components (e.g., `asChild` prop)
+- **data-slot Attributes**: Add `data-slot` attributes to all UI components for easier debugging and testing
 
 ## Project Structure
 
@@ -236,3 +253,81 @@ Tauri apps run on **macOS, Windows, and Linux**. Consider platform differences w
 - Working with file paths (use Tauri's path APIs)
 - Using OS-specific features
 - Designing UI (native window controls vary)
+
+## State Management
+
+**Zustand** is used for client-side state management:
+- `src/stores/file-store.ts` - File upload state management
+- Pattern: Create stores with `create<StoreInterface>()` from zustand
+- File deduplication: Prevents duplicate file additions by checking file paths (Tauri v2 drag-and-drop bug workaround)
+
+Example store structure:
+```typescript
+import {create} from "zustand";
+
+interface FileStore {
+  fileList: FileItem[];
+  addFiles: (files: File[], paths?: string[]) => void;
+  removeFile: (id: string) => void;
+  clearFiles: () => void;
+}
+
+export const useFileStore = create<FileStore>((set) => ({
+  fileList: [],
+  addFiles: (files, paths) => set((state) => ({...})),
+  // ...
+}));
+```
+
+## UI Component Development
+
+### Adding shadcn/ui Components
+
+**IMPORTANT**: shadcn CLI generates React 18 patterns with `forwardRef`. Always convert to React 19 pattern manually.
+
+**Process**:
+1. Install via CLI: `bunx --bun shadcn@latest add [component]`
+2. Manual conversion required:
+   - Remove `React.forwardRef`
+   - Remove `displayName` assignments
+   - Convert to regular function components
+   - Add `data-slot` attributes
+   - Ensure proper TypeScript types with `React.ComponentProps`
+
+**Example Conversion**:
+```typescript
+// ❌ shadcn CLI output (React 18)
+const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
+  ({ className, ...props }, ref) => (
+    <DialogPrimitive.Root ref={ref} className={cn(...)} {...props} />
+  )
+);
+Dialog.displayName = "Dialog";
+
+// ✅ Convert to React 19 pattern
+function Dialog({className, ...props}: React.ComponentProps<typeof DialogPrimitive.Root>) {
+  return <DialogPrimitive.Root data-slot="dialog" className={cn(...)} {...props} />;
+}
+```
+
+### File Extension Badge System
+
+Color-coded extension badges are used in `FileListItem` component:
+- Utility functions in `src/lib/file-utils.ts`:
+  - `getExtensionStyle(ext)` - Returns Tailwind classes for extension badge
+  - `getFileExtension(filename)` - Extracts file extension
+  - `formatExtensionDisplay(ext)` - Formats extension for display (uppercase, max 4 chars)
+- Supported formats: webp, svg, png, jpg, jpeg, gif, bmp, tiff, avif, heic, heif
+- Each format has distinct color scheme for light/dark mode
+
+## Important Notes
+
+### shadcn/ui Components
+- CLI installation creates React 18 patterns - manual conversion to React 19 is required
+- Always use `bunx --bun shadcn@latest add [component]` for installation
+- All UI components should have `data-slot` attributes for debugging
+
+### CONVENTION.md Context
+- CONVENTION.md is from a different project (Kobbokkom Forum)
+- Only applicable conventions: file naming (kebab-case), TypeScript strict mode, Biome config, inline handlers
+- NOT applicable: DB/service layer patterns, query patterns, barrel files prohibition
