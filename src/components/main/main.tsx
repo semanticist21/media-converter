@@ -1,16 +1,13 @@
-import {invoke} from "@tauri-apps/api/core";
 import {getCurrentWindow} from "@tauri-apps/api/window";
-import {readFile} from "@tauri-apps/plugin-fs";
 import {Sparkles} from "lucide-react";
 import {OverlayScrollbarsComponent} from "overlayscrollbars-react";
 import {useEffect, useState} from "react";
 import {FileListItem} from "@/components/main/file-list-item";
+import {useFileList} from "@/hooks/use-file-list";
 import {cn} from "@/lib/utils";
-import type {ExifData} from "@/stores/file-store";
-import {useFileStore} from "@/stores/file-store";
 
 export function Main() {
-  const {fileList, addFiles} = useFileStore();
+  const {fileList, addFileFromPath} = useFileList();
   const [isDragActive, setIsDragActive] = useState(false);
 
   useEffect(() => {
@@ -28,35 +25,9 @@ export function Main() {
           isProcessing = true;
           const filePaths = event.payload.paths;
 
-          // 파일 경로에서 File 객체 생성 및 EXIF 추출
-          const filesWithExif = await Promise.all(
-            filePaths.map(async (path) => {
-              const fileData = await readFile(path);
-              const fileName = path.split("/").pop() || "unknown";
-              const extension = fileName.split(".").pop();
+          // Add files from paths (Rust handles file reading and EXIF extraction)
+          await Promise.all(filePaths.map((path) => addFileFromPath(path)));
 
-              const file = new File([new Blob([fileData])], fileName, {
-                type: `image/${extension}`,
-              });
-
-              // Extract EXIF data
-              let exif: ExifData | null = null;
-              try {
-                exif = await invoke<ExifData | null>("extract_exif", {
-                  data: Array.from(fileData),
-                });
-              } catch (error) {
-                console.warn("Failed to extract EXIF:", error);
-              }
-
-              return {file, exif};
-            }),
-          );
-
-          const files = filesWithExif.map((f) => f.file);
-          const exifs = filesWithExif.map((f) => f.exif);
-
-          addFiles(files, filePaths, undefined, exifs);
           setIsDragActive(false);
 
           // 100ms 후 플래그 리셋
@@ -74,7 +45,7 @@ export function Main() {
     return () => {
       unlisten?.();
     };
-  }, [addFiles]);
+  }, [addFileFromPath]);
 
   return (
     <OverlayScrollbarsComponent

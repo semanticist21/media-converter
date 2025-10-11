@@ -82,6 +82,7 @@ dependencies = [
  "tauri-plugin-fs",
  "tauri-plugin-opener",
  "usvg",
+ "uuid",
 ]
 
 [[package]]

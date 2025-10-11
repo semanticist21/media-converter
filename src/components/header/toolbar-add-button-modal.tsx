@@ -1,4 +1,3 @@
-import {invoke} from "@tauri-apps/api/core";
 import {AnimatePresence, motion} from "framer-motion";
 import {AlertCircle, Check, Link, X} from "lucide-react";
 import {useState} from "react";
@@ -18,24 +17,16 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {useFileList} from "@/hooks/use-file-list";
 import {normalizeUrl, validateUrl} from "@/lib/url-utils";
-import type {ExifData} from "@/stores/file-store";
-import {useFileStore} from "@/stores/file-store";
 
 interface AddUrlDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-interface FetchImageResult {
-  data: number[];
-  content_type: string;
-  file_name: string;
-  exif: ExifData | null;
-}
-
 export function AddUrlDialog({isOpen, onOpenChange}: AddUrlDialogProps) {
-  const addFiles = useFileStore((state) => state.addFiles);
+  const {addFileFromUrl} = useFileList();
   const [url, setUrl] = useState("");
   const [isValidUrl, setIsValidUrl] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -49,20 +40,8 @@ export function AddUrlDialog({isOpen, onOpenChange}: AddUrlDialogProps) {
     setErrorMessage(null);
 
     try {
-      // Fetch image from Rust backend to avoid CORS issues
-      const result = await invoke<FetchImageResult>("fetch_image_from_url", {
-        url: normalizedUrl,
-      });
-
-      // Convert number array to Uint8Array
-      const uint8Array = new Uint8Array(result.data);
-      const blob = new Blob([uint8Array], {type: result.content_type});
-      const file = new File([blob], result.file_name, {
-        type: result.content_type,
-      });
-
-      // Add file to store with URL metadata and EXIF data
-      addFiles([file], undefined, [normalizedUrl], [result.exif]);
+      // Add file from URL (Rust handles fetching and EXIF extraction)
+      await addFileFromUrl(normalizedUrl);
 
       // Close modal and reset state
       onOpenChange(false);

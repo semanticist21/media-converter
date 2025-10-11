@@ -1,20 +1,19 @@
 import {filesize} from "filesize";
 import {Camera, X} from "lucide-react";
 import {Button} from "@/components/ui/button";
+import {type FileItemResponse, useFileList} from "@/hooks/use-file-list";
 import {
   formatExtensionDisplay,
   getExtensionStyle,
   getFileExtension,
 } from "@/lib/file-utils";
-import type {FileItem} from "@/stores/file-store";
-import {useFileStore} from "@/stores/file-store";
 
 interface FileListItemProps {
-  file: FileItem;
+  file: FileItemResponse;
 }
 
 export function FileListItem({file}: FileListItemProps) {
-  const removeFile = useFileStore((state) => state.removeFile);
+  const {removeFile} = useFileList();
 
   const extension = getFileExtension(file.name);
   const displayExt = formatExtensionDisplay(extension);
@@ -32,9 +31,9 @@ export function FileListItem({file}: FileListItemProps) {
       {/* 파일 정보 */}
       <div className="min-w-0 flex-1">
         <p className="mb-1 line-clamp-1 text-sm font-medium">{file.name}</p>
-        {(file.url || file.path) && (
+        {(file.source_url || file.source_path) && (
           <p className="line-clamp-1 text-xs text-muted-foreground">
-            {file.url || file.path}
+            {file.source_url || file.source_path}
           </p>
         )}
         <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground/70">

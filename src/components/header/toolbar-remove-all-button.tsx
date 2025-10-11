@@ -1,9 +1,9 @@
 import {X} from "lucide-react";
 import {Button} from "@/components/ui/button";
-import {useFileStore} from "@/stores/file-store";
+import {useFileList} from "@/hooks/use-file-list";
 
 export function ToolbarRemoveAllButton() {
-  const {clearFiles} = useFileStore();
+  const {clearFiles} = useFileList();
 
   return (
     <Button

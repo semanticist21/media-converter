@@ -1,6 +1,9 @@
 use serde::Serialize;
 use std::io::Cursor;
+use std::sync::Mutex;
+use uuid::Uuid;
 
+// EXIF metadata structure
 #[derive(Serialize, Clone)]
 struct ExifData {
     date_time: Option<String>,
@@ -17,13 +20,46 @@ struct ExifData {
     gps_longitude: Option<String>,
 }
 
-#[derive(Serialize)]
-struct FetchImageResult {
+// Internal file item (stores actual image bytes)
+struct FileItem {
+    id: String,
+    name: String,
+    size: u64,
+    mime_type: String,
     data: Vec<u8>,
-    content_type: String,
-    file_name: String,
+    source_path: Option<String>,
+    source_url: Option<String>,
     exif: Option<ExifData>,
 }
+
+// Response type for frontend (no image bytes)
+#[derive(Serialize, Clone)]
+struct FileItemResponse {
+    id: String,
+    name: String,
+    size: u64,
+    mime_type: String,
+    source_path: Option<String>,
+    source_url: Option<String>,
+    exif: Option<ExifData>,
+}
+
+impl FileItem {
+    fn to_response(&self) -> FileItemResponse {
+        FileItemResponse {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            size: self.size,
+            mime_type: self.mime_type.clone(),
+            source_path: self.source_path.clone(),
+            source_url: self.source_url.clone(),
+            exif: self.exif.clone(),
+        }
+    }
+}
+
+// Global state for file list
+struct FileListState(Mutex<Vec<FileItem>>);
 
 // Helper function to extract EXIF data from image bytes
 fn extract_exif_from_bytes(data: &[u8]) -> Option<ExifData> {
@@ -127,20 +163,69 @@ fn extract_exif_from_bytes(data: &[u8]) -> Option<ExifData> {
     }
 }
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+//=============================================================================
+// Tauri Commands
+//=============================================================================
+
 #[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
+fn add_file_from_path(
+    path: String,
+    state: tauri::State<FileListState>,
+) -> Result<FileItemResponse, String> {
+    // Read file from disk
+    let data = std::fs::read(&path).map_err(|e| format!("Failed to read file: {}", e))?;
+
+    // Extract file name
+    let file_name = std::path::Path::new(&path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    // Infer MIME type from extension
+    let extension = std::path::Path::new(&path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    let mime_type = format!("image/{}", extension);
+
+    // Extract EXIF
+    let exif = extract_exif_from_bytes(&data);
+
+    // Check for duplicates
+    let mut file_list = state.0.lock().unwrap();
+    if file_list.iter().any(|f| f.source_path.as_ref() == Some(&path)) {
+        return Err("File already added".to_string());
+    }
+
+    // Create file item
+    let file_item = FileItem {
+        id: Uuid::new_v4().to_string(),
+        name: file_name,
+        size: data.len() as u64,
+        mime_type,
+        data,
+        source_path: Some(path),
+        source_url: None,
+        exif,
+    };
+
+    let response = file_item.to_response();
+    file_list.push(file_item);
+
+    Ok(response)
 }
 
 #[tauri::command]
-async fn fetch_image_from_url(url: String) -> Result<FetchImageResult, String> {
-    // Fetch image from URL using reqwest asynchronously
+async fn add_file_from_url(
+    url: String,
+    state: tauri::State<'_, FileListState>,
+) -> Result<FileItemResponse, String> {
+    // Fetch image from URL
     let response = reqwest::get(&url)
         .await
         .map_err(|e| format!("Failed to fetch URL: {}", e))?;
 
-    // Check if response is successful
     if !response.status().is_success() {
         return Err(format!("Failed to fetch image ({})", response.status()));
     }
@@ -171,39 +256,79 @@ async fn fetch_image_from_url(url: String) -> Result<FetchImageResult, String> {
         }
     }
 
-    // Read response body as bytes asynchronously
+    // Read response body as bytes
     let data = response
         .bytes()
         .await
         .map_err(|e| format!("Failed to read response body: {}", e))?
         .to_vec();
 
-    // Extract EXIF data from the image bytes
+    // Extract EXIF
     let exif = extract_exif_from_bytes(&data);
 
-    Ok(FetchImageResult {
+    // Check for duplicates
+    let mut file_list = state.0.lock().unwrap();
+    if file_list.iter().any(|f| f.source_url.as_ref() == Some(&url)) {
+        return Err("File already added".to_string());
+    }
+
+    // Create file item
+    let file_item = FileItem {
+        id: Uuid::new_v4().to_string(),
+        name: file_name,
+        size: data.len() as u64,
+        mime_type: content_type,
         data,
-        content_type,
-        file_name,
+        source_path: None,
+        source_url: Some(url),
         exif,
-    })
+    };
+
+    let response = file_item.to_response();
+    file_list.push(file_item);
+
+    Ok(response)
 }
 
 #[tauri::command]
-fn extract_exif(data: Vec<u8>) -> Result<Option<ExifData>, String> {
-    Ok(extract_exif_from_bytes(&data))
+fn remove_file(id: String, state: tauri::State<FileListState>) -> Result<(), String> {
+    let mut file_list = state.0.lock().unwrap();
+    let original_len = file_list.len();
+    file_list.retain(|f| f.id != id);
+
+    if file_list.len() == original_len {
+        Err("File not found".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+#[tauri::command]
+fn clear_files(state: tauri::State<FileListState>) -> Result<(), String> {
+    let mut file_list = state.0.lock().unwrap();
+    file_list.clear();
+    Ok(())
+}
+
+#[tauri::command]
+fn get_file_list(state: tauri::State<FileListState>) -> Vec<FileItemResponse> {
+    let file_list = state.0.lock().unwrap();
+    file_list.iter().map(|f| f.to_response()).collect()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(FileListState(Mutex::new(Vec::new())))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
-            greet,
-            fetch_image_from_url,
-            extract_exif
+            add_file_from_path,
+            add_file_from_url,
+            remove_file,
+            clear_files,
+            get_file_list
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

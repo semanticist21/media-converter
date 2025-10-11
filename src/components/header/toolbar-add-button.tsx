@@ -1,8 +1,7 @@
-import {invoke} from "@tauri-apps/api/core";
 import {open} from "@tauri-apps/plugin-dialog";
-import {readFile} from "@tauri-apps/plugin-fs";
 import {Plus} from "lucide-react";
 import {useState} from "react";
+import {AddUrlDialog} from "@/components/header/toolbar-add-button-modal";
 import {Button} from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -10,12 +9,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {AddUrlDialog} from "@/components/header/toolbar-add-button-modal";
-import type {ExifData} from "@/stores/file-store";
-import {useFileStore} from "@/stores/file-store";
+import {useFileList} from "@/hooks/use-file-list";
 
 export function ToolbarAddButton() {
-  const addFiles = useFileStore((state) => state.addFiles);
+  const {addFileFromPath} = useFileList();
   const [isUrlDialogOpen, setIsUrlDialogOpen] = useState(false);
 
   return (
@@ -55,35 +52,8 @@ export function ToolbarAddButton() {
 
               const filePaths = Array.isArray(selected) ? selected : [selected];
 
-              // 파일 경로에서 File 객체 생성 및 EXIF 추출
-              const filesWithExif = await Promise.all(
-                filePaths.map(async (path) => {
-                  const fileData = await readFile(path);
-                  const fileName = path.split("/").pop() || "unknown";
-                  const extension = fileName.split(".").pop();
-
-                  const file = new File([new Blob([fileData])], fileName, {
-                    type: `image/${extension}`,
-                  });
-
-                  // Extract EXIF data
-                  let exif: ExifData | null = null;
-                  try {
-                    exif = await invoke<ExifData | null>("extract_exif", {
-                      data: Array.from(fileData),
-                    });
-                  } catch (error) {
-                    console.warn("Failed to extract EXIF:", error);
-                  }
-
-                  return {file, exif};
-                }),
-              );
-
-              const files = filesWithExif.map((f) => f.file);
-              const exifs = filesWithExif.map((f) => f.exif);
-
-              addFiles(files, filePaths, undefined, exifs);
+              // Add files from paths (Rust handles file reading and EXIF extraction)
+              await Promise.all(filePaths.map((path) => addFileFromPath(path)));
             }}
           >
             From device
