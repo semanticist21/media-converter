@@ -205,7 +205,31 @@ HMR (Hot Module Reload) uses port 1421 for WebSocket communication with Tauri.
 - Biome for linting/formatting (replaces ESLint + Prettier)
 - Bun as package manager and runtime
 
-## Common Patterns
+## Common Patterns and Gotchas
+
+### Drag-and-Drop Race Conditions
+
+**CRITICAL**: When handling multiple files via drag-and-drop, avoid calling `refresh()` for each file individually:
+
+```typescript
+// ❌ WRONG - Race condition with multiple refreshes
+await Promise.all(filePaths.map((path) => addFileFromPath(path)));
+// Each addFileFromPath calls refresh(), causing race conditions
+
+// ✅ CORRECT - Batch invoke, single refresh
+try {
+  await Promise.all(
+    filePaths.map((path) =>
+      invoke("add_file_from_path", {path}).catch(console.error)
+    )
+  );
+  await refresh(); // Single refresh after all files added
+} catch (error) {
+  console.error("Failed to add files:", error);
+}
+```
+
+**Why**: Multiple concurrent `refresh()` calls can create race conditions where some files don't render. Always batch Tauri commands and refresh once at the end.
 
 ### Async Tauri Commands
 ```typescript
@@ -227,6 +251,40 @@ try {
     console.error("Tauri command failed:", error);
 }
 ```
+
+### Tauri Event System (Real-Time Updates)
+
+For real-time communication from Rust → React, use Tauri's event system:
+
+```rust
+// Rust: Emit event
+use tauri::Emitter; // Required import
+
+window.emit("event-name", EventPayload {
+    field: value,
+})?;
+```
+
+```typescript
+// React: Listen for events
+import {listen} from "@tauri-apps/api/event";
+
+useEffect(() => {
+  const unlisten = listen<EventPayload>("event-name", (event) => {
+    console.log("Received:", event.payload);
+    // Update React state
+  });
+
+  return () => {
+    unlisten.then((fn) => fn());
+  };
+}, []);
+```
+
+**Use Cases**:
+- Progress updates during long-running operations
+- File conversion status tracking
+- Background task notifications
 
 ### State Management
 For app-wide state shared between Rust and React, use Tauri's state management or pass data through commands.
@@ -254,30 +312,171 @@ Tauri apps run on **macOS, Windows, and Linux**. Consider platform differences w
 - Using OS-specific features
 - Designing UI (native window controls vary)
 
-## State Management
+## State Management Architecture
 
-**Zustand** is used for client-side state management:
-- `src/stores/file-store.ts` - File upload state management
-- Pattern: Create stores with `create<StoreInterface>()` from zustand
-- File deduplication: Prevents duplicate file additions by checking file paths (Tauri v2 drag-and-drop bug workaround)
+**Centralized State in Rust Backend** (refactored from Zustand):
 
-Example store structure:
+The application uses a **server-side state pattern** where all file data is managed in Rust using `Mutex<Vec<FileItem>>`, with React as a thin UI layer.
+
+### Core Architecture Pattern
+
+**State Flow**: `Rust Backend (Source of Truth)` → `React Context (UI State)` → `Components (View)`
+
+```rust
+// src-tauri/src/lib.rs - Centralized state
+struct FileListState(Mutex<Vec<FileItem>>);
+
+struct FileItem {
+    id: String,
+    name: String,
+    data: Vec<u8>,        // Actual image bytes stored in Rust
+    exif: Option<ExifData>,
+    timestamps: Option<FileTimestamps>,
+    converted: bool,      // Conversion tracking
+    // ...
+}
+```
+
 ```typescript
-import {create} from "zustand";
+// src/hooks/use-file-list.tsx - React Context wrapper
+export function FileListProvider({children}) {
+  const [fileList, setFileList] = useState<FileItemResponse[]>([]);
+  const [convertingFiles, setConvertingFiles] = useState<Set<string>>(new Set());
 
-interface FileStore {
-  fileList: FileItem[];
-  addFiles: (files: File[], paths?: string[]) => void;
-  removeFile: (id: string) => void;
-  clearFiles: () => void;
+  const refresh = async () => {
+    const list = await invoke<FileItemResponse[]>("get_file_list");
+    setFileList(list);
+  };
+
+  // ... addFileFromPath, removeFile, etc.
+}
+```
+
+### Key Benefits of This Architecture
+
+1. **Single Source of Truth**: File data (including image bytes) lives in Rust memory only
+2. **Efficient Memory**: Frontend only receives metadata (no image bytes transferred)
+3. **Native Performance**: Image processing happens in Rust without serialization overhead
+4. **Automatic Deduplication**: Rust backend prevents duplicate files by path/URL checking
+
+### State Operations
+
+**Adding Files**:
+- `invoke("add_file_from_path")` → Rust reads file → Extracts EXIF → Stores in Mutex
+- Frontend receives `FileItemResponse` (metadata only, no image data)
+- For multiple files (drag-and-drop): batch invoke then single `refresh()` to avoid race conditions
+
+**Converting Images**:
+- Rust clones file data from Mutex → Releases lock immediately
+- Heavy processing in `tokio::task::spawn_blocking` (non-blocking)
+- Real-time progress via Tauri events: `window.emit("conversion-progress", ...)`
+- Updates `converted: true` flag after successful conversion
+
+## Image Conversion System
+
+### Async Conversion Architecture
+
+The conversion system is designed to keep the UI responsive during heavy image processing:
+
+```rust
+// src-tauri/src/lib.rs
+#[tauri::command]
+async fn convert_images(
+    target_format: String,
+    quality: u8,
+    preserve_timestamps: bool,
+    window: tauri::Window,
+    state: tauri::State<'_, FileListState>,
+) -> Result<Vec<ConversionResult>, String> {
+    // 1. Quick lock to clone file data, filtering unconverted files
+    let files_to_convert = {
+        let file_list = state.0.lock().unwrap();
+        file_list.iter()
+            .filter(|f| !f.converted)  // Skip already converted
+            .map(|f| (f.id.clone(), f.name.clone(), f.data.clone(), ...))
+            .collect()
+    }; // Lock released immediately
+
+    // 2. Heavy work in blocking thread pool (doesn't block UI)
+    tokio::task::spawn_blocking(move || {
+        for (id, name, data, ...) in files_to_convert {
+            // Emit progress event
+            window.emit("conversion-progress", ConversionProgress {
+                file_id: id, status: "converting"
+            });
+
+            // Convert image...
+
+            // Emit completion event
+            window.emit("conversion-progress", ConversionProgress {
+                file_id: id, status: "completed"
+            });
+        }
+    }).await
+}
+```
+
+### Real-Time Progress Tracking
+
+**Event System**: Tauri events bridge Rust backend and React frontend for real-time updates.
+
+```typescript
+// src/hooks/use-file-list.tsx
+useEffect(() => {
+  listen<ConversionProgress>("conversion-progress", (event) => {
+    const {file_id, status} = event.payload;
+
+    if (status === "converting") {
+      setConvertingFiles(prev => new Set(prev).add(file_id));
+    } else if (status === "completed") {
+      setConvertingFiles(prev => { /* remove */ });
+      refresh(); // Update UI
+    }
+  });
+}, []);
+```
+
+**UI States**: File list items show 3 states:
+1. **Default**: No badge
+2. **Converting** (amber): `<Loader2 className="animate-spin" />` + "Converting"
+3. **Converted** (green): `<CheckCircle2 />` + "Converted"
+
+### Format-Specific Optimization
+
+Different image formats use optimized encoders:
+
+- **WebP**: Uses `webp` crate (libwebp bindings) for better compression than `image` crate
+- **JPEG**: Uses `image::codecs::jpeg::JpegEncoder` with quality control
+- **PNG**: Uses `image::codecs::png::PngEncoder` with compression levels (0-9)
+- **Other formats**: Falls back to `image` crate's default encoders
+
+### Timestamp Preservation
+
+Original file timestamps (created/modified) can be preserved:
+
+```rust
+struct FileTimestamps {
+    accessed: SystemTime,
+    modified: SystemTime,
 }
 
-export const useFileStore = create<FileStore>((set) => ({
-  fileList: [],
-  addFiles: (files, paths) => set((state) => ({...})),
-  // ...
-}));
+// Extracted when adding files from local paths
+let timestamps = std::fs::metadata(&path).ok().and_then(|metadata| {
+    Some(FileTimestamps {
+        accessed: metadata.accessed().ok()?,
+        modified: metadata.modified().ok()?,
+    })
+});
+
+// Applied after conversion if requested
+if preserve_timestamps {
+    filetime::set_file_times(&output_path,
+        FileTime::from_system_time(timestamps.accessed),
+        FileTime::from_system_time(timestamps.modified));
+}
 ```
+
+**Note**: URL-sourced files don't have original timestamps (set to `None`).
 
 ## UI Component Development
 

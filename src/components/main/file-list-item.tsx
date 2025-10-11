@@ -3,6 +3,7 @@ import {save} from "@tauri-apps/plugin-dialog";
 import {revealItemInDir} from "@tauri-apps/plugin-opener";
 import {filesize} from "filesize";
 import {
+  AlertCircle,
   ArrowDownToLine,
   Camera,
   CheckCircle2,
@@ -23,8 +24,9 @@ interface FileListItemProps {
 }
 
 export function FileListItem({file}: FileListItemProps) {
-  const {removeFile, convertingFiles} = useFileList();
+  const {removeFile, convertingFiles, errorFiles} = useFileList();
   const isConverting = convertingFiles.has(file.id);
+  const hasError = errorFiles.has(file.id);
 
   const extension = getFileExtension(file.name);
   const displayExt = formatExtensionDisplay(extension);
@@ -61,7 +63,13 @@ export function FileListItem({file}: FileListItemProps) {
               <span className="text-[10px] font-medium">Converting</span>
             </span>
           )}
-          {file.converted && !isConverting && (
+          {hasError && !isConverting && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-red-600 dark:bg-red-400/10 dark:text-red-400">
+              <AlertCircle className="size-3" />
+              <span className="text-[10px] font-medium">Error</span>
+            </span>
+          )}
+          {file.converted && !isConverting && !hasError && (
             <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-green-600 dark:bg-green-400/10 dark:text-green-400">
               <CheckCircle2 className="size-3" />
               <span className="text-[10px] font-medium">Converted</span>

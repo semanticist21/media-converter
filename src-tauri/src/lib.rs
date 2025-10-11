@@ -4,6 +4,10 @@ use std::io::Cursor;
 use std::sync::Mutex;
 use tauri::Emitter;
 use uuid::Uuid;
+use img_parts::jpeg::Jpeg;
+use img_parts::png::Png;
+use img_parts::webp::WebP;
+use img_parts::{Bytes, ImageEXIF};
 
 // EXIF metadata structure
 #[derive(Serialize, Clone)]
@@ -39,6 +43,7 @@ struct FileItem {
     source_path: Option<String>,
     source_url: Option<String>,
     exif: Option<ExifData>,
+    exif_raw_bytes: Option<Vec<u8>>, // Raw EXIF data for preservation
     timestamps: Option<FileTimestamps>,
     converted: bool,
 }
@@ -176,6 +181,32 @@ fn extract_exif_from_bytes(data: &[u8]) -> Option<ExifData> {
     }
 }
 
+// Helper function to extract raw EXIF bytes from image
+fn extract_exif_raw_bytes(data: &[u8]) -> Option<Vec<u8>> {
+    // Try JPEG first
+    if let Ok(jpeg) = Jpeg::from_bytes(Bytes::copy_from_slice(data)) {
+        if let Some(exif) = jpeg.exif() {
+            return Some(exif.to_vec());
+        }
+    }
+
+    // Try PNG
+    if let Ok(png) = Png::from_bytes(Bytes::copy_from_slice(data)) {
+        if let Some(exif) = png.exif() {
+            return Some(exif.to_vec());
+        }
+    }
+
+    // Try WebP
+    if let Ok(webp) = WebP::from_bytes(Bytes::copy_from_slice(data)) {
+        if let Some(exif) = webp.exif() {
+            return Some(exif.to_vec());
+        }
+    }
+
+    None
+}
+
 //=============================================================================
 // Tauri Commands
 //=============================================================================
@@ -204,6 +235,7 @@ fn add_file_from_path(
 
     // Extract EXIF
     let exif = extract_exif_from_bytes(&data);
+    let exif_raw_bytes = extract_exif_raw_bytes(&data);
 
     // Extract timestamps from original file
     let timestamps = std::fs::metadata(&path)
@@ -230,6 +262,7 @@ fn add_file_from_path(
         source_path: Some(path),
         source_url: None,
         exif,
+        exif_raw_bytes,
         timestamps,
         converted: false,
     };
@@ -289,6 +322,7 @@ async fn add_file_from_url(
 
     // Extract EXIF
     let exif = extract_exif_from_bytes(&data);
+    let exif_raw_bytes = extract_exif_raw_bytes(&data);
 
     // Check for duplicates
     let mut file_list = state.0.lock().unwrap();
@@ -306,6 +340,7 @@ async fn add_file_from_url(
         source_path: None,
         source_url: Some(url),
         exif,
+        exif_raw_bytes,
         timestamps: None,
         converted: false,
     };
@@ -383,14 +418,14 @@ struct ConversionProgress {
 async fn convert_images(
     target_format: String,
     quality: u8,
-    _preserve_exif: bool,
+    preserve_exif: bool,
     preserve_timestamps: bool,
     output_dir: String,
     window: tauri::Window,
     state: tauri::State<'_, FileListState>,
 ) -> Result<Vec<ConversionResult>, String> {
     // Clone file list data to release Mutex lock quickly, filter out already converted files
-    let files_to_convert: Vec<(String, String, u64, Vec<u8>, Option<FileTimestamps>)> = {
+    let files_to_convert: Vec<(String, String, u64, Vec<u8>, Option<Vec<u8>>, Option<FileTimestamps>)> = {
         let file_list = state.0.lock().unwrap();
 
         file_list
@@ -402,6 +437,7 @@ async fn convert_images(
                     f.name.clone(),
                     f.size,
                     f.data.clone(),
+                    f.exif_raw_bytes.clone(), // For img-parts (JPEG, PNG, WebP)
                     f.timestamps.clone(),
                 )
             })
@@ -416,7 +452,7 @@ async fn convert_images(
     let results = tokio::task::spawn_blocking(move || {
         let mut results = Vec::new();
 
-        for (id, name, original_size, data, timestamps) in files_to_convert {
+        for (id, name, original_size, data, exif_raw_bytes, timestamps) in files_to_convert {
             // Emit conversion start event
             let _ = window.emit(
                 "conversion-progress",
@@ -456,10 +492,26 @@ async fn convert_images(
             let output_path = std::path::Path::new(&output_dir).join(&output_name);
 
             // Convert based on target format
+            let exif_to_use = if preserve_exif { exif_raw_bytes.as_deref() } else { None };
             let converted_data = match target_format.as_str() {
-                "webp" => convert_to_webp(&img, quality)?,
-                "jpeg" | "jpg" => convert_to_jpeg(&img, quality)?,
-                "png" => convert_to_png(&img, quality)?,
+                "webp" => convert_to_webp(&img, quality, exif_to_use)?,
+                "jpeg" | "jpg" => convert_to_jpeg(&img, quality, exif_to_use)?,
+                "png" => convert_to_png(&img, quality, exif_to_use)?,
+                "tiff" | "avif" => {
+                    // TIFF and AVIF: Basic encoding without EXIF preservation
+                    // EXIF preservation not supported due to library compatibility issues
+                    let mut buffer = Vec::new();
+                    let format = if target_format == "tiff" {
+                        image::ImageFormat::Tiff
+                    } else {
+                        image::ImageFormat::Avif
+                    };
+
+                    img.write_to(&mut std::io::Cursor::new(&mut buffer), format)
+                        .map_err(|e| format!("{} encoding failed: {}", target_format.to_uppercase(), e))?;
+
+                    buffer
+                }
                 _ => {
                     // Use image crate's default encoder for other formats
                     let mut buffer = Vec::new();
@@ -528,8 +580,8 @@ async fn convert_images(
     Ok(results)
 }
 
-// Convert to WebP using libwebp (better compression)
-fn convert_to_webp(img: &image::DynamicImage, quality: u8) -> Result<Vec<u8>, String> {
+// Convert to WebP using libwebp with optional EXIF preservation
+fn convert_to_webp(img: &image::DynamicImage, quality: u8, exif_bytes: Option<&[u8]>) -> Result<Vec<u8>, String> {
     use webp::Encoder;
 
     let rgba_img = img.to_rgba8();
@@ -538,11 +590,21 @@ fn convert_to_webp(img: &image::DynamicImage, quality: u8) -> Result<Vec<u8>, St
     let encoder = Encoder::from_rgba(&rgba_img, width, height);
     let webp_data = encoder.encode(quality as f32);
 
+    // Insert EXIF data if provided
+    if let Some(exif) = exif_bytes {
+        let mut webp = WebP::from_bytes(Bytes::copy_from_slice(&webp_data))
+            .map_err(|e| format!("Failed to parse WebP: {}", e))?;
+
+        webp.set_exif(Some(Bytes::copy_from_slice(exif)));
+
+        return Ok(webp.encoder().bytes().to_vec());
+    }
+
     Ok(webp_data.to_vec())
 }
 
-// Convert to JPEG
-fn convert_to_jpeg(img: &image::DynamicImage, quality: u8) -> Result<Vec<u8>, String> {
+// Convert to JPEG with optional EXIF preservation
+fn convert_to_jpeg(img: &image::DynamicImage, quality: u8, exif_bytes: Option<&[u8]>) -> Result<Vec<u8>, String> {
     let mut buffer = Vec::new();
     let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buffer, quality);
 
@@ -556,11 +618,21 @@ fn convert_to_jpeg(img: &image::DynamicImage, quality: u8) -> Result<Vec<u8>, St
         )
         .map_err(|e| format!("JPEG encoding failed: {}", e))?;
 
+    // Insert EXIF data if provided
+    if let Some(exif) = exif_bytes {
+        let mut jpeg = Jpeg::from_bytes(Bytes::copy_from_slice(&buffer))
+            .map_err(|e| format!("Failed to parse JPEG: {}", e))?;
+
+        jpeg.set_exif(Some(Bytes::copy_from_slice(exif)));
+
+        return Ok(jpeg.encoder().bytes().to_vec());
+    }
+
     Ok(buffer)
 }
 
-// Convert to PNG
-fn convert_to_png(img: &image::DynamicImage, _compression: u8) -> Result<Vec<u8>, String> {
+// Convert to PNG with optional EXIF preservation
+fn convert_to_png(img: &image::DynamicImage, _compression: u8, exif_bytes: Option<&[u8]>) -> Result<Vec<u8>, String> {
     let mut buffer = Vec::new();
     let encoder = image::codecs::png::PngEncoder::new(&mut buffer);
 
@@ -573,6 +645,16 @@ fn convert_to_png(img: &image::DynamicImage, _compression: u8) -> Result<Vec<u8>
             image::ExtendedColorType::Rgba8,
         )
         .map_err(|e| format!("PNG encoding failed: {}", e))?;
+
+    // Insert EXIF data if provided
+    if let Some(exif) = exif_bytes {
+        let mut png = Png::from_bytes(Bytes::copy_from_slice(&buffer))
+            .map_err(|e| format!("Failed to parse PNG: {}", e))?;
+
+        png.set_exif(Some(Bytes::copy_from_slice(exif)));
+
+        return Ok(png.encoder().bytes().to_vec());
+    }
 
     Ok(buffer)
 }

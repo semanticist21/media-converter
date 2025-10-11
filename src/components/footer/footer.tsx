@@ -11,6 +11,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {Slider} from "@/components/ui/slider";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {useFileList} from "@/hooks/use-file-list";
 
 type ImageFormat = "webp" | "jpeg" | "png" | "avif" | "gif" | "bmp" | "tiff";
@@ -35,6 +41,10 @@ export function Footer() {
   // 변환되지 않은 파일만 카운트
   const unconvertedFiles = fileList.filter((f) => !f.converted);
   const unconvertedCount = unconvertedFiles.length;
+
+  // EXIF 보존 지원 포맷 체크
+  const exifSupportedFormats: ImageFormat[] = ["webp", "jpeg", "png"];
+  const supportsExif = exifSupportedFormats.includes(targetFormat);
 
   return (
     <footer className="border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -67,33 +77,65 @@ export function Footer() {
           {(targetFormat === "webp" ||
             targetFormat === "jpeg" ||
             targetFormat === "avif") && (
-            <div className="flex flex-1 items-center gap-2 max-w-md">
-              <span className="text-sm font-medium">Quality:</span>
-              <Slider
-                value={[quality]}
-                onValueChange={(value) => setQuality(value[0])}
-                min={0}
-                max={100}
-                step={1}
-                className="flex-1"
-              />
-              <span className="text-sm text-muted-foreground w-8">{quality}</span>
-            </div>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex flex-1 items-center gap-2 max-w-md">
+                    <span className="text-sm font-medium cursor-pointer">
+                      Quality:
+                    </span>
+                    <Slider
+                      value={[quality]}
+                      onValueChange={(value) => setQuality(value[0])}
+                      min={0}
+                      max={100}
+                      step={1}
+                      className="flex-1"
+                    />
+                    <output className="text-sm text-muted-foreground w-8">
+                      {quality}
+                    </output>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="max-w-xs">
+                    Image quality (0-100). Higher values produce better quality
+                    but larger file sizes. Recommended: 80-90 for photos, 90-100
+                    for graphics.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
 
           {targetFormat === "png" && (
-            <div className="flex flex-1 items-center gap-2 max-w-md">
-              <span className="text-sm font-medium">Compression:</span>
-              <Slider
-                value={[quality]}
-                onValueChange={(value) => setQuality(value[0])}
-                min={0}
-                max={9}
-                step={1}
-                className="flex-1"
-              />
-              <span className="text-sm text-muted-foreground w-8">{quality}</span>
-            </div>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex flex-1 items-center gap-2 max-w-md">
+                    <span className="text-sm font-medium">Compression:</span>
+                    <Slider
+                      value={[quality]}
+                      onValueChange={(value) => setQuality(value[0])}
+                      min={0}
+                      max={9}
+                      step={1}
+                      className="flex-1"
+                    />
+                    <output className="text-sm text-muted-foreground w-8">
+                      {quality}
+                    </output>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="max-w-xs">
+                    PNG compression level (0-9). Higher values produce smaller
+                    files but take longer to compress. Lossless - no quality
+                    loss at any level.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
         </div>
 
@@ -101,37 +143,67 @@ export function Footer() {
         <div className="flex items-center gap-4">
           {/* 보존 옵션들 */}
           <div className="flex items-center gap-4">
-            {/* EXIF 보존 */}
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id={exifCheckboxId}
-                checked={preserveExif}
-                onCheckedChange={(checked) => setPreserveExif(checked === true)}
-              />
-              <label
-                htmlFor={exifCheckboxId}
-                className="text-sm font-medium cursor-pointer"
-              >
-                Preserve EXIF
-              </label>
-            </div>
+            {/* EXIF 보존 - 지원하는 포맷에만 표시 */}
+            {supportsExif && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id={exifCheckboxId}
+                        checked={preserveExif}
+                        onCheckedChange={(checked) =>
+                          setPreserveExif(checked === true)
+                        }
+                      />
+                      <label
+                        htmlFor={exifCheckboxId}
+                        className="text-sm font-medium cursor-pointer"
+                      >
+                        Preserve EXIF
+                      </label>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="max-w-xs">
+                      Keep camera metadata (date, camera model, GPS, etc.) in
+                      converted images. Supported for JPEG, PNG, and WebP
+                      formats.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
 
             {/* 타임스탬프 보존 */}
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id={timestampCheckboxId}
-                checked={preserveTimestamps}
-                onCheckedChange={(checked) =>
-                  setPreserveTimestamps(checked === true)
-                }
-              />
-              <label
-                htmlFor={timestampCheckboxId}
-                className="text-sm font-medium cursor-pointer"
-              >
-                Keep dates
-              </label>
-            </div>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id={timestampCheckboxId}
+                      checked={preserveTimestamps}
+                      onCheckedChange={(checked) =>
+                        setPreserveTimestamps(checked === true)
+                      }
+                    />
+                    <label
+                      htmlFor={timestampCheckboxId}
+                      className="text-sm font-medium cursor-pointer"
+                    >
+                      Keep dates
+                    </label>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="max-w-xs">
+                    Preserve original file creation and modification dates for
+                    converted images. Useful for maintaining photo organization
+                    by date.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
 
           {/* Convert 버튼 */}

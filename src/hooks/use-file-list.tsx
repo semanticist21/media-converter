@@ -44,6 +44,7 @@ interface FileListContextType {
   fileList: FileItemResponse[];
   isLoading: boolean;
   convertingFiles: Set<string>; // IDs of files currently being converted
+  errorFiles: Set<string>; // IDs of files that failed during conversion
   addFileFromPath: (path: string) => Promise<void>;
   addFileFromUrl: (url: string) => Promise<void>;
   removeFile: (id: string) => Promise<void>;
@@ -65,6 +66,7 @@ export function FileListProvider({
   const [convertingFiles, setConvertingFiles] = useState<Set<string>>(
     new Set(),
   );
+  const [errorFiles, setErrorFiles] = useState<Set<string>>(new Set());
 
   const refresh = useCallback(async () => {
     try {
@@ -84,17 +86,27 @@ export function FileListProvider({
 
         if (status === "converting") {
           setConvertingFiles((prev) => new Set(prev).add(file_id));
-        } else if (status === "completed" || status === "error") {
+          // Clear error state when starting new conversion
+          setErrorFiles((prev) => {
+            const next = new Set(prev);
+            next.delete(file_id);
+            return next;
+          });
+        } else if (status === "completed") {
           setConvertingFiles((prev) => {
             const next = new Set(prev);
             next.delete(file_id);
             return next;
           });
-
           // Refresh file list to update converted status
-          if (status === "completed") {
-            refresh();
-          }
+          refresh();
+        } else if (status === "error") {
+          setConvertingFiles((prev) => {
+            const next = new Set(prev);
+            next.delete(file_id);
+            return next;
+          });
+          setErrorFiles((prev) => new Set(prev).add(file_id));
         }
       },
     );
@@ -170,6 +182,7 @@ export function FileListProvider({
         fileList,
         isLoading,
         convertingFiles,
+        errorFiles,
         addFileFromPath,
         addFileFromUrl,
         removeFile,

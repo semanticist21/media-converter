@@ -1,3 +1,4 @@
+import {invoke} from "@tauri-apps/api/core";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import {Sparkles} from "lucide-react";
 import {OverlayScrollbarsComponent} from "overlayscrollbars-react";
@@ -7,7 +8,7 @@ import {useFileList} from "@/hooks/use-file-list";
 import {cn} from "@/lib/utils";
 
 export function Main() {
-  const {fileList, addFileFromPath} = useFileList();
+  const {fileList, refresh} = useFileList();
   const [isDragActive, setIsDragActive] = useState(false);
 
   useEffect(() => {
@@ -25,8 +26,20 @@ export function Main() {
           isProcessing = true;
           const filePaths = event.payload.paths;
 
-          // Add files from paths (Rust handles file reading and EXIF extraction)
-          await Promise.all(filePaths.map((path) => addFileFromPath(path)));
+          // Add files from paths (invoke Rust command directly to avoid multiple refreshes)
+          try {
+            await Promise.all(
+              filePaths.map((path) =>
+                invoke("add_file_from_path", {path}).catch((error) => {
+                  console.error(`Failed to add file ${path}:`, error);
+                }),
+              ),
+            );
+            // Refresh once after all files are added
+            await refresh();
+          } catch (error) {
+            console.error("Failed to add files:", error);
+          }
 
           setIsDragActive(false);
 
@@ -45,7 +58,7 @@ export function Main() {
     return () => {
       unlisten?.();
     };
-  }, [addFileFromPath]);
+  }, [refresh]);
 
   return (
     <OverlayScrollbarsComponent
