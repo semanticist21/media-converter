@@ -22,43 +22,6 @@ export function FileListItem({file}: FileListItemProps) {
   const displayExt = formatExtensionDisplay(extension);
   const extStyle = getExtensionStyle(extension);
 
-  // Finder에서 파일 위치 열기 (로컬 파일)
-  const handleOpenInFinder = async () => {
-    if (file.source_path) {
-      try {
-        await revealItemInDir(file.source_path);
-      } catch (error) {
-        console.error("Failed to open in Finder:", error);
-      }
-    }
-  };
-
-  // 파일 다운로드 (URL 파일)
-  const handleDownload = async () => {
-    try {
-      // 저장 위치 선택 Dialog
-      const savePath = await save({
-        defaultPath: file.name,
-        filters: [
-          {
-            name: "Images",
-            extensions: [extension || "*"],
-          },
-        ],
-      });
-
-      if (!savePath) return;
-
-      // Rust command 호출하여 파일 저장
-      await invoke("save_file", {
-        id: file.id,
-        savePath,
-      });
-    } catch (error) {
-      console.error("Failed to download file:", error);
-    }
-  };
-
   return (
     <li className="flex items-center gap-4 border-b bg-card p-4 transition-colors hover:bg-accent/60">
       {/* 파일 확장자 배지 */}
@@ -94,7 +57,15 @@ export function FileListItem({file}: FileListItemProps) {
           <Button
             variant="ghost"
             size="sm"
-            onClick={handleOpenInFinder}
+            onClick={async () => {
+              if (file.source_path) {
+                try {
+                  await revealItemInDir(file.source_path);
+                } catch (error) {
+                  console.error("Failed to open in Finder:", error);
+                }
+              }
+            }}
             className="size-8 p-0"
             aria-label={`Open ${file.name} in Finder`}
           >
@@ -107,7 +78,28 @@ export function FileListItem({file}: FileListItemProps) {
           <Button
             variant="ghost"
             size="sm"
-            onClick={handleDownload}
+            onClick={async () => {
+              try {
+                const savePath = await save({
+                  defaultPath: file.name,
+                  filters: [
+                    {
+                      name: "Images",
+                      extensions: [extension || "*"],
+                    },
+                  ],
+                });
+
+                if (!savePath) return;
+
+                await invoke("save_file", {
+                  id: file.id,
+                  savePath,
+                });
+              } catch (error) {
+                console.error("Failed to download file:", error);
+              }
+            }}
             className="size-8 p-0"
             aria-label={`Download ${file.name}`}
           >
