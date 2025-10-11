@@ -28,7 +28,12 @@ serde_json = "1"
 # Image conversion - comprehensive format support with quality control
 # Supports: jpg, png, webp (lossless/lossy), avif, gif, bmp, tiff, tga, etc.
 # Quality settings available for jpeg, webp, png compression
+# AVIF decoding requires avif-native feature (which needs dav1d C library)
+# Current: avif only = encoding only (pure Rust)
+# With avif-native = encoding + decoding (requires meson/ninja/dav1d)
 image = { version = "0.25", features = ["webp", "avif", "jpeg", "png", "gif", "bmp", "tiff"] }
+# Uncomment below to enable AVIF decoding (NOT recommended for App Store):
+# image = { version = "0.25", features = ["webp", "avif", "avif-native", "jpeg", "png", "gif", "bmp", "tiff"] }
 
 # SVG rendering and conversion
 resvg = "0.44"
@@ -63,4 +68,15 @@ futures = "0.3"
 # AVIF encoding with speed control (faster than image crate default)
 ravif = "0.11"
 rgb = "0.8"
+
+# AVIF decoding via avif-decode (requires cmake at build time only)
+# - Build requirement: cmake must be installed (`brew install cmake`)
+# - Runtime: NO dependencies (libaom is statically linked into binary)
+# - App Store: ✅ Compatible (self-contained binary)
+# - Decoding: AVIF → RGBA/RGB pixels → any target format
+avif-decode = "1.0"
+
+# AVIF encoding via ravif (pure Rust, no build dependencies)
+# - Encoding: any format → AVIF
+# - Quality and speed control available
 

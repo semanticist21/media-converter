@@ -173,6 +173,12 @@ export function FileListProvider({
   const removeFile = useCallback(
     async (id: string) => {
       try {
+        // Prevent removing files that are currently converting
+        if (convertingFiles.has(id)) {
+          console.warn("Cannot remove file while converting:", id);
+          return;
+        }
+
         await invoke("remove_file", {id});
         await refresh();
       } catch (error) {
@@ -180,18 +186,27 @@ export function FileListProvider({
         throw error;
       }
     },
-    [refresh],
+    [convertingFiles, refresh],
   );
 
   const clearFiles = useCallback(async () => {
     try {
-      await invoke("clear_files");
+      // Remove files that are not currently converting
+      const filesToRemove = fileList.filter(
+        (file) => !convertingFiles.has(file.id),
+      );
+
+      // Remove each file individually
+      for (const file of filesToRemove) {
+        await invoke("remove_file", {id: file.id});
+      }
+
       await refresh();
     } catch (error) {
       console.error("Failed to clear files:", error);
       throw error;
     }
-  }, [refresh]);
+  }, [fileList, convertingFiles, refresh]);
 
   const removeConvertedFiles = useCallback(async () => {
     try {

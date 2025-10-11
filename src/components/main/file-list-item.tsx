@@ -45,7 +45,7 @@ export function FileListItem({file}: FileListItemProps) {
     <li className="flex items-center gap-4 border-b bg-card p-4 transition-colors hover:bg-accent/60">
       {/* 파일 확장자 배지 */}
       <div
-        className={`flex size-12 shrink-0 items-center justify-center rounded-md ${extStyle}`}
+        className={`flex size-12 shrink-0 items-center justify-center rounded-md select-none ${extStyle}`}
       >
         <span className="text-xs font-semibold">{displayExt}</span>
       </div>
@@ -176,6 +176,7 @@ export function FileListItem({file}: FileListItemProps) {
                 variant="ghost"
                 size="sm"
                 onClick={() => removeFile(file.id)}
+                disabled={isConverting}
                 className="size-8 p-0"
                 aria-label={`Remove ${file.name}`}
               >
@@ -183,7 +184,11 @@ export function FileListItem({file}: FileListItemProps) {
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              <p className="text-xs">Remove this file from the list</p>
+              <p className="text-xs">
+                {isConverting
+                  ? "Cannot remove while converting"
+                  : "Remove this file from the list"}
+              </p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>

@@ -1,8 +1,8 @@
+mod commands;
+mod converters;
+mod exif;
 mod models;
 mod state;
-mod exif;
-mod converters;
-mod commands;
 
 use state::FileListState;
 use std::sync::Mutex;
@@ -22,6 +22,7 @@ pub fn run() {
             commands::remove_converted_files,
             commands::get_file_list,
             commands::save_file,
+            commands::get_cpu_count,
             commands::convert_images
         ])
         .run(tauri::generate_context!())

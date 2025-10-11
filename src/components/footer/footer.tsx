@@ -39,9 +39,12 @@ export function Footer() {
     targetFormat,
     qualityByFormat,
     avifSpeed,
+    maxConcurrentConversions,
     preserveExif,
     preserveTimestamps,
     useSourceDirectory,
+    createSubfolder,
+    subfolderName,
     setTargetFormat,
     setQualityForFormat,
     setAvifSpeed,
@@ -294,8 +297,8 @@ export function Footer() {
                 <TooltipContent>
                   <p className="max-w-xs">
                     Save converted images in the same folder as the original
-                    files. If unchecked, you will be asked to select an output
-                    folder.
+                    files. Additional subfolder options available in Settings. If
+                    unchecked, you will be asked to select an output folder.
                   </p>
                 </TooltipContent>
               </Tooltip>
@@ -335,6 +338,9 @@ export function Footer() {
                     preserveExif,
                     preserveTimestamps,
                     outputDir,
+                    maxConcurrent: maxConcurrentConversions,
+                    createSubfolder,
+                    subfolderName,
                   },
                 );
 

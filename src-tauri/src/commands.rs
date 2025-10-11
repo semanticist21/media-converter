@@ -45,6 +45,16 @@ pub fn add_file_from_path(
 
     // Create file item
     let mut file_list = state.0.lock().unwrap();
+
+    // Check for duplicate path - only block if unconverted file exists
+    // Allows re-adding converted files for re-conversion
+    if file_list
+        .iter()
+        .any(|f| f.source_path.as_ref() == Some(&path) && !f.converted)
+    {
+        return Err(format!("File already added: {}", path));
+    }
+
     let file_item = FileItem {
         id: Uuid::new_v4().to_string(),
         name: file_name,
@@ -190,6 +200,11 @@ pub fn save_file(
 }
 
 #[tauri::command]
+pub fn get_cpu_count() -> usize {
+    num_cpus::get()
+}
+
+#[tauri::command]
 pub async fn convert_images(
     target_format: String,
     quality: u8,
@@ -197,6 +212,9 @@ pub async fn convert_images(
     preserve_exif: bool,
     preserve_timestamps: bool,
     output_dir: String,
+    max_concurrent: usize,
+    create_subfolder: bool,
+    subfolder_name: String,
     window: tauri::Window,
     state: tauri::State<'_, FileListState>,
 ) -> Result<Vec<ConversionResult>, String> {
@@ -236,9 +254,14 @@ pub async fn convert_images(
     // Check if using source directory mode
     let use_source_dir = output_dir == "USE_SOURCE_DIR";
 
-    // Get CPU core count for concurrent processing
-    let max_concurrent = num_cpus::get();
-    let semaphore = Arc::new(Semaphore::new(max_concurrent));
+    // Determine concurrent processing count
+    // 0 = auto (CPU cores), 1+ = manual value
+    let concurrent_count = if max_concurrent == 0 {
+        num_cpus::get()
+    } else {
+        max_concurrent
+    };
+    let semaphore = Arc::new(Semaphore::new(concurrent_count));
 
     // Create channel for ordered results
     let (result_tx, mut result_rx) = mpsc::channel(files_to_convert.len());
@@ -250,6 +273,7 @@ pub async fn convert_images(
         let window = window.clone();
         let target_format = target_format.clone();
         let output_dir = output_dir.clone();
+        let subfolder_name = subfolder_name.clone();
         let semaphore = Arc::clone(&semaphore);
         let result_tx = result_tx.clone();
         let avif_speed_clone = avif_speed;
@@ -260,60 +284,227 @@ pub async fn convert_images(
 
             // Perform heavy conversion work in blocking thread pool
             let result = tokio::task::spawn_blocking(move || {
-            // Emit conversion start event
-            let _ = window.emit(
-                "conversion-progress",
-                ConversionProgress {
-                    file_id: id.clone(),
-                    file_name: name.clone(),
-                    status: "converting".to_string(),
-                    error_message: None,
-                },
-            );
+                // Emit conversion start event
+                let _ = window.emit(
+                    "conversion-progress",
+                    ConversionProgress {
+                        file_id: id.clone(),
+                        file_name: name.clone(),
+                        status: "converting".to_string(),
+                        error_message: None,
+                    },
+                );
 
-            // Load image from bytes
-            let img = match image::load_from_memory(&data) {
-                Ok(img) => img,
-                Err(e) => {
-                    let error_msg = format!("Failed to decode image: {}", e);
-                    let _ = window.emit(
-                        "conversion-progress",
-                        ConversionProgress {
-                            file_id: id.clone(),
-                            file_name: name.clone(),
-                            status: "error".to_string(),
-                            error_message: Some(error_msg.clone()),
-                        },
-                    );
-                    eprintln!("{}", error_msg);
-                    return None;
-                }
-            };
-
-            // Generate output filename
-            let output_name = format!(
-                "{}.{}",
-                std::path::Path::new(&name)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("image"),
-                target_format
-            );
-
-            // Determine output directory
-            let output_path = if use_source_dir {
-                // Use source directory mode
-                match &source_path {
-                    Some(path) => {
-                        // Extract directory from source path
-                        let source_dir = std::path::Path::new(path)
-                            .parent()
-                            .ok_or_else(|| "Failed to get source directory".to_string());
-
-                        match source_dir {
-                            Ok(dir) => dir.join(&output_name),
-                            Err(e) => {
-                                let error_msg = format!("Failed to get source directory: {}", e);
+                // Load image from bytes
+                let img = match image::load_from_memory(&data) {
+                    Ok(img) => img,
+                    Err(e) => {
+                        // If standard decoding fails, try AVIF decoding
+                        // AVIF decode → RGBA/RGB pixels → DynamicImage → target format
+                        match avif_decode::Decoder::from_avif(&data) {
+                            Ok(decoder) => {
+                                match decoder.to_image() {
+                                    Ok(avif_image) => {
+                                        // Convert avif_decode::Image to image::DynamicImage
+                                        match avif_image {
+                                            avif_decode::Image::Rgba8(img) => {
+                                                // RGBA8 → Vec<u8>
+                                                let pixels: Vec<u8> = img.buf()
+                                                    .iter()
+                                                    .flat_map(|px| [px.r, px.g, px.b, px.a])
+                                                    .collect();
+                                                match image::RgbaImage::from_raw(
+                                                    img.width() as u32,
+                                                    img.height() as u32,
+                                                    pixels,
+                                                ) {
+                                                    Some(rgba_img) => image::DynamicImage::ImageRgba8(rgba_img),
+                                                    None => {
+                                                        let error_msg = "Failed to create RGBA image from AVIF".to_string();
+                                                        let _ = window.emit(
+                                                            "conversion-progress",
+                                                            ConversionProgress {
+                                                                file_id: id.clone(),
+                                                                file_name: name.clone(),
+                                                                status: "error".to_string(),
+                                                                error_message: Some(error_msg.clone()),
+                                                            },
+                                                        );
+                                                        eprintln!("{}", error_msg);
+                                                        return None;
+                                                    }
+                                                }
+                                            }
+                                            avif_decode::Image::Rgb8(img) => {
+                                                // RGB8 → Vec<u8>
+                                                let pixels: Vec<u8> = img.buf()
+                                                    .iter()
+                                                    .flat_map(|px| [px.r, px.g, px.b])
+                                                    .collect();
+                                                match image::RgbImage::from_raw(
+                                                    img.width() as u32,
+                                                    img.height() as u32,
+                                                    pixels,
+                                                ) {
+                                                    Some(rgb_img) => image::DynamicImage::ImageRgb8(rgb_img),
+                                                    None => {
+                                                        let error_msg = "Failed to create RGB image from AVIF".to_string();
+                                                        let _ = window.emit(
+                                                            "conversion-progress",
+                                                            ConversionProgress {
+                                                                file_id: id.clone(),
+                                                                file_name: name.clone(),
+                                                                status: "error".to_string(),
+                                                                error_message: Some(error_msg.clone()),
+                                                            },
+                                                        );
+                                                        eprintln!("{}", error_msg);
+                                                        return None;
+                                                    }
+                                                }
+                                            }
+                                            avif_decode::Image::Rgba16(img) => {
+                                                // RGBA16 → RGBA8 conversion (simple downscaling)
+                                                let pixels: Vec<u8> = img.buf()
+                                                    .iter()
+                                                    .flat_map(|px| [
+                                                        (px.r >> 8) as u8,
+                                                        (px.g >> 8) as u8,
+                                                        (px.b >> 8) as u8,
+                                                        (px.a >> 8) as u8,
+                                                    ])
+                                                    .collect();
+                                                match image::RgbaImage::from_raw(
+                                                    img.width() as u32,
+                                                    img.height() as u32,
+                                                    pixels,
+                                                ) {
+                                                    Some(rgba_img) => image::DynamicImage::ImageRgba8(rgba_img),
+                                                    None => {
+                                                        let error_msg = "Failed to create RGBA image from AVIF (16-bit)".to_string();
+                                                        let _ = window.emit(
+                                                            "conversion-progress",
+                                                            ConversionProgress {
+                                                                file_id: id.clone(),
+                                                                file_name: name.clone(),
+                                                                status: "error".to_string(),
+                                                                error_message: Some(error_msg.clone()),
+                                                            },
+                                                        );
+                                                        eprintln!("{}", error_msg);
+                                                        return None;
+                                                    }
+                                                }
+                                            }
+                                            avif_decode::Image::Rgb16(img) => {
+                                                // RGB16 → RGB8 conversion
+                                                let pixels: Vec<u8> = img.buf()
+                                                    .iter()
+                                                    .flat_map(|px| [
+                                                        (px.r >> 8) as u8,
+                                                        (px.g >> 8) as u8,
+                                                        (px.b >> 8) as u8,
+                                                    ])
+                                                    .collect();
+                                                match image::RgbImage::from_raw(
+                                                    img.width() as u32,
+                                                    img.height() as u32,
+                                                    pixels,
+                                                ) {
+                                                    Some(rgb_img) => image::DynamicImage::ImageRgb8(rgb_img),
+                                                    None => {
+                                                        let error_msg = "Failed to create RGB image from AVIF (16-bit)".to_string();
+                                                        let _ = window.emit(
+                                                            "conversion-progress",
+                                                            ConversionProgress {
+                                                                file_id: id.clone(),
+                                                                file_name: name.clone(),
+                                                                status: "error".to_string(),
+                                                                error_message: Some(error_msg.clone()),
+                                                            },
+                                                        );
+                                                        eprintln!("{}", error_msg);
+                                                        return None;
+                                                    }
+                                                }
+                                            }
+                                            avif_decode::Image::Gray8(img) => {
+                                                // Gray8 → Luma8
+                                                let pixels: Vec<u8> = img.buf()
+                                                    .iter()
+                                                    .map(|px| px.value())
+                                                    .collect();
+                                                match image::GrayImage::from_raw(
+                                                    img.width() as u32,
+                                                    img.height() as u32,
+                                                    pixels,
+                                                ) {
+                                                    Some(gray_img) => image::DynamicImage::ImageLuma8(gray_img),
+                                                    None => {
+                                                        let error_msg = "Failed to create Gray image from AVIF".to_string();
+                                                        let _ = window.emit(
+                                                            "conversion-progress",
+                                                            ConversionProgress {
+                                                                file_id: id.clone(),
+                                                                file_name: name.clone(),
+                                                                status: "error".to_string(),
+                                                                error_message: Some(error_msg.clone()),
+                                                            },
+                                                        );
+                                                        eprintln!("{}", error_msg);
+                                                        return None;
+                                                    }
+                                                }
+                                            }
+                                            avif_decode::Image::Gray16(img) => {
+                                                // Gray16 → Luma8 conversion
+                                                let pixels: Vec<u8> = img.buf()
+                                                    .iter()
+                                                    .map(|px| (px.value() >> 8) as u8)
+                                                    .collect();
+                                                match image::GrayImage::from_raw(
+                                                    img.width() as u32,
+                                                    img.height() as u32,
+                                                    pixels,
+                                                ) {
+                                                    Some(gray_img) => image::DynamicImage::ImageLuma8(gray_img),
+                                                    None => {
+                                                        let error_msg = "Failed to create Gray image from AVIF (16-bit)".to_string();
+                                                        let _ = window.emit(
+                                                            "conversion-progress",
+                                                            ConversionProgress {
+                                                                file_id: id.clone(),
+                                                                file_name: name.clone(),
+                                                                status: "error".to_string(),
+                                                                error_message: Some(error_msg.clone()),
+                                                            },
+                                                        );
+                                                        eprintln!("{}", error_msg);
+                                                        return None;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Err(to_image_err) => {
+                                        let error_msg = format!("Failed to convert AVIF to image: {}", to_image_err);
+                                        let _ = window.emit(
+                                            "conversion-progress",
+                                            ConversionProgress {
+                                                file_id: id.clone(),
+                                                file_name: name.clone(),
+                                                status: "error".to_string(),
+                                                error_message: Some(error_msg.clone()),
+                                            },
+                                        );
+                                        eprintln!("{}", error_msg);
+                                        return None;
+                                    }
+                                }
+                            }
+                            Err(avif_err) => {
+                                // Both standard and AVIF decoding failed
+                                let error_msg = format!("Failed to decode image: {} (AVIF decode also failed: {})", e, avif_err);
                                 let _ = window.emit(
                                     "conversion-progress",
                                     ConversionProgress {
@@ -328,8 +519,119 @@ pub async fn convert_images(
                             }
                         }
                     }
-                    None => {
-                        let error_msg = "Cannot use source directory for URL-based files".to_string();
+                };
+
+                // Generate output filename
+                let output_name = format!(
+                    "{}.{}",
+                    std::path::Path::new(&name)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("image"),
+                    target_format
+                );
+
+                // Determine output directory
+                let output_path = if use_source_dir {
+                    // Use source directory mode
+                    match &source_path {
+                        Some(path) => {
+                            // Extract directory from source path
+                            let source_dir = std::path::Path::new(path)
+                                .parent()
+                                .ok_or_else(|| "Failed to get source directory".to_string());
+
+                            match source_dir {
+                                Ok(dir) => {
+                                    // Determine final directory based on subfolder settings
+                                    let final_dir = if create_subfolder && !subfolder_name.is_empty() {
+                                        // Create subfolder if it doesn't exist
+                                        let subfolder_path = dir.join(&subfolder_name);
+                                        if !subfolder_path.exists() {
+                                            if let Err(e) = std::fs::create_dir_all(&subfolder_path) {
+                                                let error_msg = format!("Failed to create subfolder: {}", e);
+                                                let _ = window.emit(
+                                                    "conversion-progress",
+                                                    ConversionProgress {
+                                                        file_id: id.clone(),
+                                                        file_name: name.clone(),
+                                                        status: "error".to_string(),
+                                                        error_message: Some(error_msg.clone()),
+                                                    },
+                                                );
+                                                eprintln!("{}", error_msg);
+                                                return None;
+                                            }
+                                        }
+                                        subfolder_path
+                                    } else {
+                                        // Save directly in source directory
+                                        dir.to_path_buf()
+                                    };
+
+                                    final_dir.join(&output_name)
+                                }
+                                Err(e) => {
+                                    let error_msg =
+                                        format!("Failed to get source directory: {}", e);
+                                    let _ = window.emit(
+                                        "conversion-progress",
+                                        ConversionProgress {
+                                            file_id: id.clone(),
+                                            file_name: name.clone(),
+                                            status: "error".to_string(),
+                                            error_message: Some(error_msg.clone()),
+                                        },
+                                    );
+                                    eprintln!("{}", error_msg);
+                                    return None;
+                                }
+                            }
+                        }
+                        None => {
+                            let error_msg =
+                                "Cannot use source directory for URL-based files".to_string();
+                            let _ = window.emit(
+                                "conversion-progress",
+                                ConversionProgress {
+                                    file_id: id.clone(),
+                                    file_name: name.clone(),
+                                    status: "error".to_string(),
+                                    error_message: Some(error_msg.clone()),
+                                },
+                            );
+                            eprintln!("{}", error_msg);
+                            return None;
+                        }
+                    }
+                } else {
+                    std::path::Path::new(&output_dir).join(&output_name)
+                };
+
+                // Check if file already exists at output path
+                if output_path.exists() {
+                    let _ = window.emit(
+                        "conversion-progress",
+                        ConversionProgress {
+                            file_id: id.clone(),
+                            file_name: name.clone(),
+                            status: "skipped".to_string(),
+                            error_message: Some("File already exists".to_string()),
+                        },
+                    );
+                    return None;
+                }
+
+                // Convert based on target format
+                let exif_to_use = if preserve_exif {
+                    exif_raw_bytes.as_deref()
+                } else {
+                    None
+                };
+                let converted_data = match target_format.as_str() {
+                    "error" => {
+                        // Dev mode: intentional error for testing
+                        let error_msg = "Intentional error for testing (dev mode)".to_string();
                         let _ = window.emit(
                             "conversion-progress",
                             ConversionProgress {
@@ -342,35 +644,139 @@ pub async fn convert_images(
                         eprintln!("{}", error_msg);
                         return None;
                     }
-                }
-            } else {
-                std::path::Path::new(&output_dir).join(&output_name)
-            };
-
-            // Check if file already exists at output path
-            if output_path.exists() {
-                let _ = window.emit(
-                    "conversion-progress",
-                    ConversionProgress {
-                        file_id: id.clone(),
-                        file_name: name.clone(),
-                        status: "skipped".to_string(),
-                        error_message: Some("File already exists".to_string()),
+                    "webp" => match convert_to_webp(&img, quality, exif_to_use) {
+                        Ok(data) => data,
+                        Err(e) => {
+                            let _ = window.emit(
+                                "conversion-progress",
+                                ConversionProgress {
+                                    file_id: id.clone(),
+                                    file_name: name.clone(),
+                                    status: "error".to_string(),
+                                    error_message: Some(e.clone()),
+                                },
+                            );
+                            eprintln!("{}", e);
+                            return None;
+                        }
                     },
-                );
-                return None;
-            }
+                    "jpeg" | "jpg" => match convert_to_jpeg(&img, quality, exif_to_use) {
+                        Ok(data) => data,
+                        Err(e) => {
+                            let _ = window.emit(
+                                "conversion-progress",
+                                ConversionProgress {
+                                    file_id: id.clone(),
+                                    file_name: name.clone(),
+                                    status: "error".to_string(),
+                                    error_message: Some(e.clone()),
+                                },
+                            );
+                            eprintln!("{}", e);
+                            return None;
+                        }
+                    },
+                    "png" => match convert_to_png(&img, quality, exif_to_use) {
+                        Ok(data) => data,
+                        Err(e) => {
+                            let _ = window.emit(
+                                "conversion-progress",
+                                ConversionProgress {
+                                    file_id: id.clone(),
+                                    file_name: name.clone(),
+                                    status: "error".to_string(),
+                                    error_message: Some(e.clone()),
+                                },
+                            );
+                            eprintln!("{}", e);
+                            return None;
+                        }
+                    },
+                    "avif" => match convert_to_avif(&img, quality, avif_speed_clone, exif_to_use) {
+                        Ok(data) => data,
+                        Err(e) => {
+                            let _ = window.emit(
+                                "conversion-progress",
+                                ConversionProgress {
+                                    file_id: id.clone(),
+                                    file_name: name.clone(),
+                                    status: "error".to_string(),
+                                    error_message: Some(e.clone()),
+                                },
+                            );
+                            eprintln!("{}", e);
+                            return None;
+                        }
+                    },
+                    "tiff" => {
+                        // TIFF: Basic encoding without EXIF preservation
+                        let mut buffer = Vec::new();
+                        match img.write_to(
+                            &mut std::io::Cursor::new(&mut buffer),
+                            image::ImageFormat::Tiff,
+                        ) {
+                            Ok(_) => buffer,
+                            Err(e) => {
+                                let error_msg = format!("TIFF encoding failed: {}", e);
+                                let _ = window.emit(
+                                    "conversion-progress",
+                                    ConversionProgress {
+                                        file_id: id.clone(),
+                                        file_name: name.clone(),
+                                        status: "error".to_string(),
+                                        error_message: Some(error_msg.clone()),
+                                    },
+                                );
+                                eprintln!("{}", error_msg);
+                                return None;
+                            }
+                        }
+                    }
+                    _ => {
+                        // Use image crate's default encoder for other formats
+                        let mut buffer = Vec::new();
+                        let format = match image::ImageFormat::from_extension(&target_format) {
+                            Some(fmt) => fmt,
+                            None => {
+                                let error_msg = format!("Unsupported format: {}", target_format);
+                                let _ = window.emit(
+                                    "conversion-progress",
+                                    ConversionProgress {
+                                        file_id: id.clone(),
+                                        file_name: name.clone(),
+                                        status: "error".to_string(),
+                                        error_message: Some(error_msg.clone()),
+                                    },
+                                );
+                                eprintln!("{}", error_msg);
+                                return None;
+                            }
+                        };
 
-            // Convert based on target format
-            let exif_to_use = if preserve_exif {
-                exif_raw_bytes.as_deref()
-            } else {
-                None
-            };
-            let converted_data = match target_format.as_str() {
-                "error" => {
-                    // Dev mode: intentional error for testing
-                    let error_msg = "Intentional error for testing (dev mode)".to_string();
+                        match img.write_to(&mut std::io::Cursor::new(&mut buffer), format) {
+                            Ok(_) => buffer,
+                            Err(e) => {
+                                let error_msg =
+                                    format!("Failed to encode {}: {}", target_format, e);
+                                let _ = window.emit(
+                                    "conversion-progress",
+                                    ConversionProgress {
+                                        file_id: id.clone(),
+                                        file_name: name.clone(),
+                                        status: "error".to_string(),
+                                        error_message: Some(error_msg.clone()),
+                                    },
+                                );
+                                eprintln!("{}", error_msg);
+                                return None;
+                            }
+                        }
+                    }
+                };
+
+                // Write to file
+                if let Err(e) = std::fs::write(&output_path, &converted_data) {
+                    let error_msg = format!("Failed to write file: {}", e);
                     let _ = window.emit(
                         "conversion-progress",
                         ConversionProgress {
@@ -383,181 +789,37 @@ pub async fn convert_images(
                     eprintln!("{}", error_msg);
                     return None;
                 }
-                "webp" => match convert_to_webp(&img, quality, exif_to_use) {
-                    Ok(data) => data,
-                    Err(e) => {
-                        let _ = window.emit(
-                            "conversion-progress",
-                            ConversionProgress {
-                                file_id: id.clone(),
-                                file_name: name.clone(),
-                                status: "error".to_string(),
-                                error_message: Some(e.clone()),
-                            },
+
+                // Preserve timestamps if requested and available
+                if preserve_timestamps {
+                    if let Some(ref ts) = timestamps {
+                        let _ = filetime::set_file_times(
+                            &output_path,
+                            filetime::FileTime::from_system_time(ts.accessed),
+                            filetime::FileTime::from_system_time(ts.modified),
                         );
-                        eprintln!("{}", e);
-                        return None;
-                    }
-                },
-                "jpeg" | "jpg" => match convert_to_jpeg(&img, quality, exif_to_use) {
-                    Ok(data) => data,
-                    Err(e) => {
-                        let _ = window.emit(
-                            "conversion-progress",
-                            ConversionProgress {
-                                file_id: id.clone(),
-                                file_name: name.clone(),
-                                status: "error".to_string(),
-                                error_message: Some(e.clone()),
-                            },
-                        );
-                        eprintln!("{}", e);
-                        return None;
-                    }
-                },
-                "png" => match convert_to_png(&img, quality, exif_to_use) {
-                    Ok(data) => data,
-                    Err(e) => {
-                        let _ = window.emit(
-                            "conversion-progress",
-                            ConversionProgress {
-                                file_id: id.clone(),
-                                file_name: name.clone(),
-                                status: "error".to_string(),
-                                error_message: Some(e.clone()),
-                            },
-                        );
-                        eprintln!("{}", e);
-                        return None;
-                    }
-                },
-                "avif" => match convert_to_avif(&img, quality, avif_speed_clone, exif_to_use) {
-                    Ok(data) => data,
-                    Err(e) => {
-                        let _ = window.emit(
-                            "conversion-progress",
-                            ConversionProgress {
-                                file_id: id.clone(),
-                                file_name: name.clone(),
-                                status: "error".to_string(),
-                                error_message: Some(e.clone()),
-                            },
-                        );
-                        eprintln!("{}", e);
-                        return None;
-                    }
-                },
-                "tiff" => {
-                    // TIFF: Basic encoding without EXIF preservation
-                    let mut buffer = Vec::new();
-                    match img.write_to(
-                        &mut std::io::Cursor::new(&mut buffer),
-                        image::ImageFormat::Tiff,
-                    ) {
-                        Ok(_) => buffer,
-                        Err(e) => {
-                            let error_msg = format!("TIFF encoding failed: {}", e);
-                            let _ = window.emit(
-                                "conversion-progress",
-                                ConversionProgress {
-                                    file_id: id.clone(),
-                                    file_name: name.clone(),
-                                    status: "error".to_string(),
-                                    error_message: Some(error_msg.clone()),
-                                },
-                            );
-                            eprintln!("{}", error_msg);
-                            return None;
-                        }
                     }
                 }
-                _ => {
-                    // Use image crate's default encoder for other formats
-                    let mut buffer = Vec::new();
-                    let format = match image::ImageFormat::from_extension(&target_format) {
-                        Some(fmt) => fmt,
-                        None => {
-                            let error_msg = format!("Unsupported format: {}", target_format);
-                            let _ = window.emit(
-                                "conversion-progress",
-                                ConversionProgress {
-                                    file_id: id.clone(),
-                                    file_name: name.clone(),
-                                    status: "error".to_string(),
-                                    error_message: Some(error_msg.clone()),
-                                },
-                            );
-                            eprintln!("{}", error_msg);
-                            return None;
-                        }
-                    };
 
-                    match img.write_to(&mut std::io::Cursor::new(&mut buffer), format) {
-                        Ok(_) => buffer,
-                        Err(e) => {
-                            let error_msg = format!("Failed to encode {}: {}", target_format, e);
-                            let _ = window.emit(
-                                "conversion-progress",
-                                ConversionProgress {
-                                    file_id: id.clone(),
-                                    file_name: name.clone(),
-                                    status: "error".to_string(),
-                                    error_message: Some(error_msg.clone()),
-                                },
-                            );
-                            eprintln!("{}", error_msg);
-                            return None;
-                        }
-                    }
-                }
-            };
-
-            // Write to file
-            if let Err(e) = std::fs::write(&output_path, &converted_data) {
-                let error_msg = format!("Failed to write file: {}", e);
+                // Emit conversion complete event
                 let _ = window.emit(
                     "conversion-progress",
                     ConversionProgress {
                         file_id: id.clone(),
                         file_name: name.clone(),
-                        status: "error".to_string(),
-                        error_message: Some(error_msg.clone()),
+                        status: "completed".to_string(),
+                        error_message: None,
                     },
                 );
-                eprintln!("{}", error_msg);
-                return None;
-            }
 
-            // Preserve timestamps if requested and available
-            if preserve_timestamps {
-                if let Some(ref ts) = timestamps {
-                    let _ = filetime::set_file_times(
-                        &output_path,
-                        filetime::FileTime::from_system_time(ts.accessed),
-                        filetime::FileTime::from_system_time(ts.modified),
-                    );
-                }
-            }
-
-            // Emit conversion complete event
-            let _ = window.emit(
-                "conversion-progress",
-                ConversionProgress {
-                    file_id: id.clone(),
-                    file_name: name.clone(),
-                    status: "completed".to_string(),
-                    error_message: None,
-                },
-            );
-
-            // Return conversion result
-            Some(ConversionResult {
-                original_name: name,
-                converted_name: output_name,
-                original_size,
-                converted_size: converted_data.len() as u64,
-                saved_path: output_path.to_string_lossy().to_string(),
-            })
+                // Return conversion result
+                Some(ConversionResult {
+                    original_name: name,
+                    converted_name: output_name,
+                    original_size,
+                    converted_size: converted_data.len() as u64,
+                    saved_path: output_path.to_string_lossy().to_string(),
+                })
             })
             .await
             .ok()
