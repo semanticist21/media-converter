@@ -1,4 +1,5 @@
-import {Check, X} from "lucide-react";
+import {AnimatePresence, motion} from "framer-motion";
+import {Check, Link, X} from "lucide-react";
 import {useState} from "react";
 import {Button} from "@/components/ui/button";
 import {
@@ -37,7 +38,9 @@ export function AddUrlDialog({isOpen, onOpenChange}: AddUrlDialogProps) {
 
       const blob = await response.blob();
       const responseType =
-        blob.type || response.headers.get("content-type") || "application/octet-stream";
+        blob.type ||
+        response.headers.get("content-type") ||
+        "application/octet-stream";
 
       let fileName = "image";
       try {
@@ -96,15 +99,43 @@ export function AddUrlDialog({isOpen, onOpenChange}: AddUrlDialogProps) {
               }}
               disabled={isLoading}
             />
-            {url.trim() && (
-              <div className="shrink-0">
-                {isValidUrl ? (
-                  <Check className="size-5 text-green-500" />
+            <div className="shrink-0">
+              <AnimatePresence mode="wait">
+                {url.trim() ? (
+                  isValidUrl ? (
+                    <motion.div
+                      key="valid"
+                      initial={{opacity: 0, scale: 0.8}}
+                      animate={{opacity: 1, scale: 1}}
+                      exit={{opacity: 0, scale: 0.8}}
+                      transition={{type: "spring", stiffness: 700, damping: 25}}
+                    >
+                      <Check className="size-5 text-green-500" />
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="invalid"
+                      initial={{opacity: 0, scale: 0.8}}
+                      animate={{opacity: 1, scale: 1}}
+                      exit={{opacity: 0, scale: 0.8}}
+                      transition={{type: "spring", stiffness: 700, damping: 25}}
+                    >
+                      <X className="size-5 text-red-500" />
+                    </motion.div>
+                  )
                 ) : (
-                  <X className="size-5 text-red-500" />
+                  <motion.div
+                    key="empty"
+                    initial={{opacity: 0, scale: 0.8}}
+                    animate={{opacity: 1, scale: 1}}
+                    exit={{opacity: 0, scale: 0.8}}
+                    transition={{type: "spring", stiffness: 700, damping: 25}}
+                  >
+                    <Link className="size-5 text-gray-400" />
+                  </motion.div>
                 )}
-              </div>
-            )}
+              </AnimatePresence>
+            </div>
           </div>
         </div>
 
