@@ -1,6 +1,6 @@
-import {Footer} from "@/components/layout/footer";
-import {Main} from "@/components/layout/main";
-import {Toolbar} from "@/components/toolbar";
+import {Footer} from "@/components/footer/footer";
+import {Toolbar} from "@/components/header/toolbar";
+import {Main} from "@/components/main/main";
 import "./index.css";
 
 export default function App() {

@@ -22,7 +22,7 @@ export function FileListItem({file}: FileListItemProps) {
   const extStyle = getExtensionStyle(extension);
 
   return (
-    <div className="flex items-center gap-4 border-b bg-card p-4 transition-colors hover:bg-accent/60">
+    <li className="flex items-center gap-4 border-b bg-card p-4 transition-colors hover:bg-accent/60">
       {/* 파일 확장자 배지 */}
       <div
         className={`flex size-12 shrink-0 items-center justify-center rounded-md ${extStyle}`}
@@ -54,6 +54,6 @@ export function FileListItem({file}: FileListItemProps) {
       >
         <X className="size-4" />
       </Button>
-    </div>
+    </li>
   );
 }

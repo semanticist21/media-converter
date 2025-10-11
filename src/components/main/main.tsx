@@ -1,9 +1,9 @@
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import {readFile} from "@tauri-apps/plugin-fs";
 import {Upload} from "lucide-react";
-import {useEffect, useState} from "react";
 import {OverlayScrollbarsComponent} from "overlayscrollbars-react";
-import {FileListItem} from "@/components/file-list-item";
+import {useEffect, useState} from "react";
+import {FileListItem} from "@/components/main/file-list-item";
 import {cn} from "@/lib/utils";
 import {useFileStore} from "@/stores/file-store";
 
@@ -77,11 +77,11 @@ export function Main() {
     >
       <div className="flex min-h-full flex-col">
         {fileList.length > 0 ? (
-          <div className="flex flex-col">
+          <ul className="flex list-none flex-col">
             {fileList.map((file) => (
               <FileListItem key={file.id} file={file} />
             ))}
-          </div>
+          </ul>
         ) : (
           <div className="m-4 flex flex-1 flex-col items-center justify-center rounded-lg transition-colors">
             <Upload className="mb-4 size-12 text-muted-foreground/40" />

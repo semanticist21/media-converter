@@ -20,7 +20,7 @@ import {
 import {Input} from "@/components/ui/input";
 import {useFileStore} from "@/stores/file-store";
 
-export function AddButton() {
+export function ToolbarAddButton() {
   const addFiles = useFileStore((state) => state.addFiles);
   const [isUrlDialogOpen, setIsUrlDialogOpen] = useState(false);
   const [url, setUrl] = useState("");
@@ -33,7 +33,7 @@ export function AddButton() {
           Add
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent>
+      <DropdownMenuContent align="start" alignOffset={8}>
         <DropdownMenuItem
           onClick={async () => {
             // Tauri 파일 다이얼로그로 이미지 선택

@@ -1,7 +1,7 @@
 import {Info} from "lucide-react";
 import {Button} from "@/components/ui/button";
 
-export function InfoButton() {
+export function ToolbarInfoButton() {
   return (
     <Button
       variant="outline"
