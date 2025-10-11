@@ -1,5 +1,8 @@
+import {invoke} from "@tauri-apps/api/core";
+import {save} from "@tauri-apps/plugin-dialog";
+import {revealItemInDir} from "@tauri-apps/plugin-opener";
 import {filesize} from "filesize";
-import {Camera, X} from "lucide-react";
+import {ArrowDownToLine, Camera, FolderOpen, X} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {type FileItemResponse, useFileList} from "@/hooks/use-file-list";
 import {
@@ -18,6 +21,43 @@ export function FileListItem({file}: FileListItemProps) {
   const extension = getFileExtension(file.name);
   const displayExt = formatExtensionDisplay(extension);
   const extStyle = getExtensionStyle(extension);
+
+  // Finder에서 파일 위치 열기 (로컬 파일)
+  const handleOpenInFinder = async () => {
+    if (file.source_path) {
+      try {
+        await revealItemInDir(file.source_path);
+      } catch (error) {
+        console.error("Failed to open in Finder:", error);
+      }
+    }
+  };
+
+  // 파일 다운로드 (URL 파일)
+  const handleDownload = async () => {
+    try {
+      // 저장 위치 선택 Dialog
+      const savePath = await save({
+        defaultPath: file.name,
+        filters: [
+          {
+            name: "Images",
+            extensions: [extension || "*"],
+          },
+        ],
+      });
+
+      if (!savePath) return;
+
+      // Rust command 호출하여 파일 저장
+      await invoke("save_file", {
+        id: file.id,
+        savePath,
+      });
+    } catch (error) {
+      console.error("Failed to download file:", error);
+    }
+  };
 
   return (
     <li className="flex items-center gap-4 border-b bg-card p-4 transition-colors hover:bg-accent/60">
@@ -47,16 +87,45 @@ export function FileListItem({file}: FileListItemProps) {
         </div>
       </div>
 
-      {/* 삭제 버튼 */}
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => removeFile(file.id)}
-        className="size-8 shrink-0 p-0"
-        aria-label={`Remove ${file.name}`}
-      >
-        <X className="size-4" />
-      </Button>
+      {/* 액션 버튼들 */}
+      <div className="flex items-center gap-1 shrink-0">
+        {/* Finder 열기 버튼 (로컬 파일) */}
+        {file.source_path && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleOpenInFinder}
+            className="size-8 p-0"
+            aria-label={`Open ${file.name} in Finder`}
+          >
+            <FolderOpen className="size-4" />
+          </Button>
+        )}
+
+        {/* 다운로드 버튼 (URL 파일) */}
+        {file.source_url && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleDownload}
+            className="size-8 p-0"
+            aria-label={`Download ${file.name}`}
+          >
+            <ArrowDownToLine className="size-4" />
+          </Button>
+        )}
+
+        {/* 삭제 버튼 */}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => removeFile(file.id)}
+          className="size-8 p-0"
+          aria-label={`Remove ${file.name}`}
+        >
+          <X className="size-4" />
+        </Button>
+      </div>
     </li>
   );
 }

@@ -316,6 +316,25 @@ fn get_file_list(state: tauri::State<FileListState>) -> Vec<FileItemResponse> {
     file_list.iter().map(|f| f.to_response()).collect()
 }
 
+#[tauri::command]
+fn save_file(
+    id: String,
+    save_path: String,
+    state: tauri::State<FileListState>,
+) -> Result<(), String> {
+    let file_list = state.0.lock().unwrap();
+    let file = file_list
+        .iter()
+        .find(|f| f.id == id)
+        .ok_or_else(|| "File not found".to_string())?;
+
+    // Write file data to the specified path
+    std::fs::write(&save_path, &file.data)
+        .map_err(|e| format!("Failed to save file: {}", e))?;
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -328,7 +347,8 @@ pub fn run() {
             add_file_from_url,
             remove_file,
             clear_files,
-            get_file_list
+            get_file_list,
+            save_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
