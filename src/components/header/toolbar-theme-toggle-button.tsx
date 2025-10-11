@@ -1,6 +1,13 @@
+import {motion} from "framer-motion";
 import {Moon, Sun} from "lucide-react";
 import {useTheme} from "next-themes";
 import {Button} from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 export function ToolbarThemeToggleButton() {
   const {theme, setTheme} = useTheme();
@@ -17,15 +24,51 @@ export function ToolbarThemeToggleButton() {
     }, 0);
   };
 
+  const isDark = theme === "dark";
+
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={toggleTheme}
-      aria-label="Toggle theme"
-    >
-      <Sun className="size-4 rotate-0 scale-100 text-yellow-500 transition-all dark:-rotate-90 dark:scale-0" />
-      <Moon className="absolute size-4 rotate-90 scale-0 text-blue-500 transition-all dark:rotate-0 dark:scale-100" />
-    </Button>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={toggleTheme}
+            aria-label="Toggle theme"
+          >
+            <motion.div
+              animate={{
+                scale: isDark ? 0 : 1,
+                rotate: isDark ? -90 : 0,
+              }}
+              transition={{
+                type: "spring",
+                stiffness: 200,
+                damping: 20,
+              }}
+            >
+              <Sun className="size-4 text-yellow-500" />
+            </motion.div>
+            <motion.div
+              className="absolute"
+              animate={{
+                scale: isDark ? 1 : 0,
+                rotate: isDark ? 0 : 90,
+              }}
+              transition={{
+                type: "spring",
+                stiffness: 200,
+                damping: 20,
+              }}
+            >
+              <Moon className="size-4 text-blue-500" />
+            </motion.div>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p className="text-xs">Toggle between light and dark mode</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

@@ -2,7 +2,7 @@ import {invoke} from "@tauri-apps/api/core";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import {Sparkles} from "lucide-react";
 import {OverlayScrollbarsComponent} from "overlayscrollbars-react";
-import {useEffect, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {FileListItem} from "@/components/main/file-list-item";
 import {useFileList} from "@/hooks/use-file-list";
 import {cn} from "@/lib/utils";
@@ -10,10 +10,10 @@ import {cn} from "@/lib/utils";
 export function Main() {
   const {fileList, refresh} = useFileList();
   const [isDragActive, setIsDragActive] = useState(false);
+  const isProcessingRef = useRef(false);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    let isProcessing = false;
 
     getCurrentWindow()
       .onDragDropEvent(async (event) => {
@@ -21,9 +21,9 @@ export function Main() {
           setIsDragActive(true);
         } else if (event.payload.type === "drop") {
           // Tauri v2 버그로 인한 중복 이벤트 방지 (macOS Issue #14134)
-          if (isProcessing) return;
+          if (isProcessingRef.current) return;
 
-          isProcessing = true;
+          isProcessingRef.current = true;
           const filePaths = event.payload.paths;
 
           // Add files from paths (invoke Rust command directly to avoid multiple refreshes)
@@ -43,10 +43,10 @@ export function Main() {
 
           setIsDragActive(false);
 
-          // 100ms 후 플래그 리셋
+          // 300ms 후 플래그 리셋 (더 긴 시간으로 변경)
           setTimeout(() => {
-            isProcessing = false;
-          }, 100);
+            isProcessingRef.current = false;
+          }, 300);
         } else if (event.payload.type === "leave") {
           setIsDragActive(false);
         }

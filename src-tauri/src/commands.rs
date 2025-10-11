@@ -41,16 +41,8 @@ pub fn add_file_from_path(
         Some(FileTimestamps { accessed, modified })
     });
 
-    // Check for duplicates
-    let mut file_list = state.0.lock().unwrap();
-    if file_list
-        .iter()
-        .any(|f| f.source_path.as_ref() == Some(&path))
-    {
-        return Err("File already added".to_string());
-    }
-
     // Create file item
+    let mut file_list = state.0.lock().unwrap();
     let file_item = FileItem {
         id: Uuid::new_v4().to_string(),
         name: file_name,
@@ -122,16 +114,8 @@ pub async fn add_file_from_url(
     let exif = extract_exif_from_bytes(&data);
     let exif_raw_bytes = extract_exif_raw_bytes(&data);
 
-    // Check for duplicates
-    let mut file_list = state.0.lock().unwrap();
-    if file_list
-        .iter()
-        .any(|f| f.source_url.as_ref() == Some(&url))
-    {
-        return Err("File already added".to_string());
-    }
-
     // Create file item (URL files don't have timestamps)
+    let mut file_list = state.0.lock().unwrap();
     let file_item = FileItem {
         id: Uuid::new_v4().to_string(),
         name: file_name,
@@ -340,6 +324,20 @@ pub async fn convert_images(
             } else {
                 std::path::Path::new(&output_dir).join(&output_name)
             };
+
+            // Check if file already exists at output path
+            if output_path.exists() {
+                let _ = window.emit(
+                    "conversion-progress",
+                    ConversionProgress {
+                        file_id: id.clone(),
+                        file_name: name.clone(),
+                        status: "skipped".to_string(),
+                        error_message: Some("File already exists".to_string()),
+                    },
+                );
+                continue; // Skip this file
+            }
 
             // Convert based on target format
             let exif_to_use = if preserve_exif {

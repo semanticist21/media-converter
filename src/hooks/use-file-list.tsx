@@ -37,8 +37,8 @@ export interface FileItemResponse {
 export interface ConversionProgress {
   file_id: string;
   file_name: string;
-  status: "converting" | "completed" | "error";
-  error_message?: string; // Error message for failed conversions
+  status: "converting" | "completed" | "error" | "skipped";
+  error_message?: string; // Error message for failed conversions or skip reason
 }
 
 interface FileListContextType {
@@ -46,6 +46,7 @@ interface FileListContextType {
   isLoading: boolean;
   convertingFiles: Set<string>; // IDs of files currently being converted
   errorFiles: Map<string, string>; // Map of file ID to error message
+  skippedFiles: Map<string, string>; // Map of file ID to skip reason
   addFileFromPath: (path: string) => Promise<void>;
   addFileFromUrl: (url: string) => Promise<void>;
   removeFile: (id: string) => Promise<void>;
@@ -69,6 +70,9 @@ export function FileListProvider({
     new Set(),
   );
   const [errorFiles, setErrorFiles] = useState<Map<string, string>>(new Map());
+  const [skippedFiles, setSkippedFiles] = useState<Map<string, string>>(
+    new Map(),
+  );
 
   const refresh = useCallback(async () => {
     try {
@@ -88,8 +92,13 @@ export function FileListProvider({
 
         if (status === "converting") {
           setConvertingFiles((prev) => new Set(prev).add(file_id));
-          // Clear error state when starting new conversion
+          // Clear error and skip state when starting new conversion
           setErrorFiles((prev) => {
+            const next = new Map(prev);
+            next.delete(file_id);
+            return next;
+          });
+          setSkippedFiles((prev) => {
             const next = new Map(prev);
             next.delete(file_id);
             return next;
@@ -108,7 +117,18 @@ export function FileListProvider({
             next.delete(file_id);
             return next;
           });
-          setErrorFiles((prev) => new Map(prev).set(file_id, error_message || "Unknown error"));
+          setErrorFiles((prev) =>
+            new Map(prev).set(file_id, error_message || "Unknown error"),
+          );
+        } else if (status === "skipped") {
+          setConvertingFiles((prev) => {
+            const next = new Set(prev);
+            next.delete(file_id);
+            return next;
+          });
+          setSkippedFiles((prev) =>
+            new Map(prev).set(file_id, error_message || "File already exists"),
+          );
         }
       },
     );
@@ -195,6 +215,7 @@ export function FileListProvider({
         isLoading,
         convertingFiles,
         errorFiles,
+        skippedFiles,
         addFileFromPath,
         addFileFromUrl,
         removeFile,

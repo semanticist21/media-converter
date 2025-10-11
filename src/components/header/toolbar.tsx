@@ -3,6 +3,7 @@ import {ToolbarClearButton} from "@/components/header/toolbar-clear-button";
 import {ToolbarHistoryButton} from "@/components/header/toolbar-history-button";
 import {ToolbarInfoButton} from "@/components/header/toolbar-info-button";
 import {ToolbarRemoveAllButton} from "@/components/header/toolbar-remove-all-button";
+import {ToolbarSettingsButton} from "@/components/header/toolbar-settings-button";
 import {ToolbarThemeToggleButton} from "@/components/header/toolbar-theme-toggle-button";
 import {ButtonGroup, ButtonGroupSeparator} from "@/components/ui/button-group";
 
@@ -26,6 +27,8 @@ export function Toolbar() {
           <ToolbarThemeToggleButton />
           <ButtonGroupSeparator />
           <ToolbarInfoButton />
+          <ButtonGroupSeparator />
+          <ToolbarSettingsButton />
         </ButtonGroup>
       </div>
     </header>

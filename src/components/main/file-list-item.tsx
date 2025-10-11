@@ -30,10 +30,12 @@ interface FileListItemProps {
 }
 
 export function FileListItem({file}: FileListItemProps) {
-  const {removeFile, convertingFiles, errorFiles} = useFileList();
+  const {removeFile, convertingFiles, errorFiles, skippedFiles} = useFileList();
   const isConverting = convertingFiles.has(file.id);
   const errorMessage = errorFiles.get(file.id);
   const hasError = errorMessage !== undefined;
+  const skipReason = skippedFiles.get(file.id);
+  const isSkipped = skipReason !== undefined;
 
   const extension = getFileExtension(file.name);
   const displayExt = formatExtensionDisplay(extension);
@@ -70,6 +72,21 @@ export function FileListItem({file}: FileListItemProps) {
               <span className="text-[10px] font-medium">Converting</span>
             </span>
           )}
+          {isSkipped && !isConverting && !hasError && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-amber-600 dark:bg-amber-400/10 dark:text-amber-400 select-none">
+                    <AlertCircle className="size-3" />
+                    <span className="text-[10px] font-medium">Skip</span>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="max-w-xs text-xs">{skipReason}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
           {hasError && !isConverting && (
             <TooltipProvider>
               <Tooltip>
@@ -85,7 +102,7 @@ export function FileListItem({file}: FileListItemProps) {
               </Tooltip>
             </TooltipProvider>
           )}
-          {file.converted && !isConverting && !hasError && (
+          {file.converted && !isConverting && !hasError && !isSkipped && (
             <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-green-600 dark:bg-green-400/10 dark:text-green-400 select-none">
               <CheckCircle2 className="size-3" />
               <span className="text-[10px] font-medium">Converted</span>
@@ -152,15 +169,24 @@ export function FileListItem({file}: FileListItemProps) {
         )}
 
         {/* 삭제 버튼 */}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => removeFile(file.id)}
-          className="size-8 p-0"
-          aria-label={`Remove ${file.name}`}
-        >
-          <X className="size-4" />
-        </Button>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => removeFile(file.id)}
+                className="size-8 p-0"
+                aria-label={`Remove ${file.name}`}
+              >
+                <X className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="text-xs">Remove this file from the list</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
     </li>
   );

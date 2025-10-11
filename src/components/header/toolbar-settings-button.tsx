@@ -1,4 +1,4 @@
-import {X} from "lucide-react";
+import {Settings} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {
   Tooltip,
@@ -6,11 +6,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {useFileList} from "@/hooks/use-file-list";
 
-export function ToolbarRemoveAllButton() {
-  const {clearFiles} = useFileList();
-
+export function ToolbarSettingsButton() {
   return (
     <TooltipProvider>
       <Tooltip>
@@ -18,17 +15,17 @@ export function ToolbarRemoveAllButton() {
           <Button
             variant="outline"
             size="sm"
-            onClick={clearFiles}
-            aria-label="Remove all files"
+            onClick={() => {
+              // TODO: 설정 기능 구현
+              console.log("Settings button clicked");
+            }}
+            aria-label="Settings"
           >
-            <X className="size-4 text-red-500" />
-            Remove
+            <Settings className="size-4 fill-slate-600 stroke-slate-600 dark:fill-slate-400 dark:stroke-slate-400" />
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          <p className="text-xs">
-            Remove all files from the list regardless of conversion status
-          </p>
+          <p className="text-xs">Application settings</p>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

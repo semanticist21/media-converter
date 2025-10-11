@@ -19,7 +19,15 @@ import {
 } from "@/components/ui/tooltip";
 import {useFileList} from "@/hooks/use-file-list";
 
-type ImageFormat = "webp" | "jpeg" | "png" | "avif" | "gif" | "bmp" | "tiff" | "error";
+type ImageFormat =
+  | "webp"
+  | "jpeg"
+  | "png"
+  | "avif"
+  | "gif"
+  | "bmp"
+  | "tiff"
+  | "error";
 
 interface ConversionResult {
   original_name: string;
@@ -29,16 +37,42 @@ interface ConversionResult {
   saved_path: string;
 }
 
+// 포맷별 기본 quality/compression 값
+const DEFAULT_QUALITY_BY_FORMAT: Record<ImageFormat, number> = {
+  webp: 80,
+  jpeg: 80,
+  png: 6,
+  avif: 80,
+  gif: 0,
+  bmp: 0,
+  tiff: 0,
+  error: 0,
+};
+
 export function Footer() {
   const {fileList} = useFileList();
   const [targetFormat, setTargetFormat] = useState<ImageFormat>("webp");
-  const [quality, setQuality] = useState(80);
+  // 포맷별 quality 값 저장
+  const [qualityByFormat, setQualityByFormat] = useState<
+    Record<ImageFormat, number>
+  >(DEFAULT_QUALITY_BY_FORMAT);
   const [preserveExif, setPreserveExif] = useState(true);
   const [preserveTimestamps, setPreserveTimestamps] = useState(true);
   const [useSourceDirectory, setUseSourceDirectory] = useState(false);
   const exifCheckboxId = useId();
   const timestampCheckboxId = useId();
   const sourceDirectoryCheckboxId = useId();
+
+  // 현재 포맷의 quality 값
+  const quality = qualityByFormat[targetFormat];
+
+  // Quality 값 업데이트 (현재 포맷에만 적용)
+  const handleQualityChange = (value: number) => {
+    setQualityByFormat((prev) => ({
+      ...prev,
+      [targetFormat]: value,
+    }));
+  };
 
   // Dev mode 감지
   const isDev = import.meta.env.DEV;
@@ -96,7 +130,7 @@ export function Footer() {
                     </span>
                     <Slider
                       value={[quality]}
-                      onValueChange={(value) => setQuality(value[0])}
+                      onValueChange={(value) => handleQualityChange(value[0])}
                       min={0}
                       max={100}
                       step={1}
@@ -126,7 +160,7 @@ export function Footer() {
                     <span className="text-sm font-medium">Compression:</span>
                     <Slider
                       value={[quality]}
-                      onValueChange={(value) => setQuality(value[0])}
+                      onValueChange={(value) => handleQualityChange(value[0])}
                       min={0}
                       max={9}
                       step={1}
@@ -168,9 +202,9 @@ export function Footer() {
                       />
                       <label
                         htmlFor={exifCheckboxId}
-                        className="text-sm font-medium cursor-pointer"
+                        className="flex items-center gap-1.5 text-sm font-medium cursor-pointer"
                       >
-                        Preserve EXIF
+                        EXIF
                       </label>
                     </div>
                   </TooltipTrigger>

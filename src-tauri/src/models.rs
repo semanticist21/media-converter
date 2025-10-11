@@ -82,7 +82,7 @@ pub struct ConversionResult {
 pub struct ConversionProgress {
     pub file_id: String,
     pub file_name: String,
-    pub status: String, // "converting" | "completed" | "error"
+    pub status: String, // "converting" | "completed" | "error" | "skipped"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_message: Option<String>, // Error message for failed conversions
 }
