@@ -31,6 +31,12 @@
       "recommended": true,
       "a11y": {
         "useSemanticElements": "off"
+      },
+      "suspicious": {
+        "noUnknownAtRules": "off"
+      },
+      "style": {
+        "noNonNullAssertion": "off"
       }
     }
   },
