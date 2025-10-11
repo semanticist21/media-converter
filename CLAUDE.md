@@ -17,6 +17,7 @@ This is a **Tauri v2 desktop application** with React 19 + TypeScript 7.0 fronte
 - `image` crate: jpg, png, webp, avif, gif, bmp, tiff support with quality control
 - `resvg` + `usvg`: SVG rendering and conversion
 - `libheif-rs`: HEIC/HEIF format support
+- `webp` crate: Optimized WebP encoding (better compression than `image` crate)
 
 ## Development Commands
 
@@ -100,15 +101,31 @@ anyimage-converter/
 │   ├── index.css          # Global styles + Tailwind CSS v4
 │   ├── components/        # React components
 │   │   ├── ui/            # Reusable UI primitives (Button, Dropdown, etc.)
-│   │   ├── layout/        # Layout components (Main, Footer)
-│   │   └── toolbar.tsx    # Feature components
-│   ├── lib/               # Utility functions (cn() helper)
+│   │   ├── header/        # Toolbar components (add, clear, settings)
+│   │   ├── main/          # File list components
+│   │   ├── footer/        # Footer component
+│   │   └── settings/      # Settings modal
+│   ├── hooks/             # Custom React hooks
+│   │   └── use-file-list.tsx  # File list state management
+│   ├── lib/               # Utility functions
+│   │   ├── utils.ts       # cn() helper for Tailwind
+│   │   └── file-utils.ts  # File extension utilities
 │   └── assets/            # Static assets (images, etc.)
 ├── src-tauri/             # Rust backend source
 │   ├── src/
-│   │   ├── lib.rs         # Main Tauri app logic & command registration
-│   │   └── main.rs        # Binary entry point (calls lib.rs)
-│   ├── Cargo.toml         # Rust dependencies (image processing libraries)
+│   │   ├── lib.rs         # Main entry point, command registration
+│   │   ├── main.rs        # Binary entry point (calls lib.rs)
+│   │   ├── commands.rs    # Tauri command implementations
+│   │   ├── models.rs      # Data structures (FileItem, ExifData)
+│   │   ├── state.rs       # Application state (FileListState)
+│   │   ├── exif.rs        # EXIF metadata extraction
+│   │   └── converters/    # Format-specific converters
+│   │       ├── mod.rs     # Converter module
+│   │       ├── webp.rs    # WebP converter (libwebp)
+│   │       ├── jpeg.rs    # JPEG converter
+│   │       ├── png.rs     # PNG converter
+│   │       └── avif.rs    # AVIF converter
+│   ├── Cargo.toml         # Rust dependencies
 │   ├── tauri.conf.json    # Tauri app configuration
 │   ├── capabilities/      # Tauri permission definitions
 │   └── icons/             # App icons for different platforms
@@ -121,26 +138,65 @@ anyimage-converter/
 - `@/*` maps to `./src/*` (configured in `tsconfig.json` and `vite.config.ts`)
 - Use absolute imports: `import {cn} from "@/lib/utils"`
 
+## Rust Backend Architecture
+
+### Module Organization
+
+The Rust backend is organized into focused modules:
+
+- **`lib.rs`**: Entry point, plugin registration, command handler setup
+- **`commands.rs`**: All Tauri command implementations (add_file, convert_images, etc.)
+- **`models.rs`**: Data structures shared between Rust and TypeScript
+- **`state.rs`**: Application state wrapper (`FileListState`)
+- **`exif.rs`**: EXIF metadata extraction logic
+- **`converters/`**: Format-specific image conversion implementations
+
+### Registered Tauri Commands
+
+All available commands (defined in `lib.rs`):
+```rust
+commands::add_file_from_path       // Add file from local path
+commands::add_file_from_url        // Add file from URL
+commands::remove_file              // Remove single file
+commands::clear_files              // Remove all files
+commands::remove_converted_files   // Remove converted files only
+commands::get_file_list            // Get current file list
+commands::save_file                // Save file to disk
+commands::get_cpu_count            // Get CPU count for parallelization
+commands::convert_images           // Convert images to target format
+```
+
+### Tauri Plugins
+
+Current plugins installed:
+- `tauri-plugin-opener` - Open URLs/files with system default apps
+- `tauri-plugin-dialog` - Native file/folder dialogs
+- `tauri-plugin-fs` - File system access
+
+To add plugins, modify both:
+- `src-tauri/Cargo.toml` (Rust dependency)
+- `src-tauri/src/lib.rs` (register with `.plugin()`)
+
 ## Adding Tauri Commands (Rust ↔ React Communication)
 
 **Pattern for exposing Rust functions to React:**
 
-1. **Define command in `src-tauri/src/lib.rs`**:
+1. **Define command in `src-tauri/src/commands.rs`**:
 ```rust
 #[tauri::command]
-fn my_command(param: String) -> Result<String, String> {
+pub fn my_command(param: String) -> Result<String, String> {
     // Rust logic here
     Ok(format!("Result: {}", param))
 }
 ```
 
-2. **Register in invoke_handler**:
+2. **Register in `src-tauri/src/lib.rs` invoke_handler**:
 ```rust
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            greet,        // existing command
-            my_command    // ADD NEW COMMAND HERE
+            commands::add_file_from_path,
+            commands::my_command    // ADD NEW COMMAND HERE
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -156,54 +212,200 @@ const result = await invoke<string>("my_command", { param: "value" });
 
 **CRITICAL**: Every Tauri command must be added to `invoke_handler` or it won't be accessible from frontend.
 
-## Tauri Plugins
+## State Management Architecture
 
-Current plugins installed:
-- `tauri-plugin-opener` - Open URLs/files with system default apps
+**Centralized State in Rust Backend** (refactored from Zustand):
 
-To add plugins, modify both:
-- `src-tauri/Cargo.toml` (Rust dependency)
-- `src-tauri/src/lib.rs` (register with `.plugin()`)
+The application uses a **server-side state pattern** where all file data is managed in Rust using `Arc<Mutex<Vec<FileItem>>>`, with React as a thin UI layer.
 
-## Development Server Configuration
+### Core Architecture Pattern
 
-Vite dev server runs on **port 1420** (fixed port for Tauri integration). If port conflict occurs, Vite will fail (strict mode enabled).
+**State Flow**: `Rust Backend (Source of Truth)` → `React Context (UI State)` → `Components (View)`
 
-HMR (Hot Module Reload) uses port 1421 for WebSocket communication with Tauri.
+```rust
+// src-tauri/src/state.rs
+pub struct FileListState(pub Arc<Mutex<Vec<FileItem>>>);
 
-## Build Process
+// src-tauri/src/models.rs
+pub struct FileItem {
+    pub id: String,
+    pub name: String,
+    pub data: Vec<u8>,        // Actual image bytes stored in Rust
+    pub mime_type: String,
+    pub exif: Option<ExifData>,
+    pub timestamps: Option<FileTimestamps>,
+    pub converted: bool,
+    pub converted_path: Option<String>,
+    // ...
+}
+```
 
-**Frontend build**: Uses TypeScript 7.0 native preview (`tsgo`) + Vite
-- `bun build` command: `tsgo && vite build`
-- TypeScript compilation must pass (no type errors)
-- Vite bundles to `dist/`
+```typescript
+// src/hooks/use-file-list.tsx - React Context wrapper
+export function FileListProvider({children}) {
+  const [fileList, setFileList] = useState<FileItemResponse[]>([]);
+  const [convertingFiles, setConvertingFiles] = useState<Set<string>>(new Set());
+  const [errorFiles, setErrorFiles] = useState<Map<string, string>>(new Map());
+  const [skippedFiles, setSkippedFiles] = useState<Map<string, string>>(new Map());
 
-**Tauri build**: Creates platform-specific installers in `src-tauri/target/release/`
-- macOS: `.dmg` and `.app`
-- Windows: `.msi` and `.exe`
-- Linux: `.deb`, `.AppImage`
+  const refresh = async () => {
+    const list = await invoke<FileItemResponse[]>("get_file_list");
+    setFileList(list);
+  };
 
-**Rust library name**: `anyimage_converter_lib` (note: uses snake_case for crate name)
+  // ... addFileFromPath, removeFile, etc.
+}
+```
 
-## Technology Stack
+### Key Benefits of This Architecture
 
-**Frontend**:
-- React 19.1
-- TypeScript 7.0 (native preview via `@typescript/native-preview`)
-- Tailwind CSS v4 with `tailwindcss-animate` plugin
-- Vite 7.0
-- UI Components: Radix UI primitives + custom components
-- Styling: `clsx` + `tailwind-merge` via `cn()` utility
-- Icons: Lucide React
+1. **Single Source of Truth**: File data (including image bytes) lives in Rust memory only
+2. **Efficient Memory**: Frontend only receives metadata (no image bytes transferred)
+3. **Native Performance**: Image processing happens in Rust without serialization overhead
+4. **Automatic Deduplication**: Rust backend prevents duplicate files by path/URL checking
 
-**Backend (Rust)**:
-- Tauri 2
-- Image processing: `image`, `resvg`, `usvg`, `libheif-rs`
-- Serialization: `serde`, `serde_json`
+### State Operations
 
-**Tooling**:
-- Biome for linting/formatting (replaces ESLint + Prettier)
-- Bun as package manager and runtime
+**Adding Files**:
+- `invoke("add_file_from_path")` → Rust reads file → Extracts EXIF → Stores in Mutex
+- Frontend receives `FileItemResponse` (metadata only, no image data)
+- For multiple files (drag-and-drop): batch invoke then single `refresh()` to avoid race conditions
+
+**Converting Images**:
+- Rust clones file data from Mutex → Releases lock immediately
+- Heavy processing in `tokio::task::spawn_blocking` (non-blocking)
+- Real-time progress via Tauri events: `window.emit("conversion-progress", ...)`
+- Updates `converted: true` flag after successful conversion
+
+### Conversion Progress States
+
+The `use-file-list.tsx` hook tracks multiple conversion states:
+- **convertingFiles**: `Set<string>` - Files currently being converted
+- **errorFiles**: `Map<string, string>` - Files that failed with error messages
+- **skippedFiles**: `Map<string, string>` - Files skipped with reasons (e.g., already exists)
+
+Event-driven state updates via `conversion-progress` events:
+- `status: "converting"` → Add to convertingFiles
+- `status: "completed"` → Remove from convertingFiles, refresh file list
+- `status: "error"` → Remove from convertingFiles, add to errorFiles
+- `status: "skipped"` → Remove from convertingFiles, add to skippedFiles
+
+## Image Conversion System
+
+### Async Conversion Architecture
+
+The conversion system is designed to keep the UI responsive during heavy image processing:
+
+```rust
+// src-tauri/src/commands.rs
+#[tauri::command]
+pub async fn convert_images(
+    target_format: String,
+    quality: u8,
+    preserve_timestamps: bool,
+    window: tauri::Window,
+    state: tauri::State<'_, FileListState>,
+) -> Result<Vec<ConversionResult>, String> {
+    // 1. Quick lock to clone file data, filtering unconverted files
+    let files_to_convert = {
+        let file_list = state.0.lock().unwrap();
+        file_list.iter()
+            .filter(|f| !f.converted)  // Skip already converted
+            .map(|f| (f.id.clone(), f.name.clone(), f.data.clone(), ...))
+            .collect()
+    }; // Lock released immediately
+
+    // 2. Heavy work in blocking thread pool (doesn't block UI)
+    tokio::task::spawn_blocking(move || {
+        for (id, name, data, ...) in files_to_convert {
+            // Emit progress event
+            window.emit("conversion-progress", ConversionProgress {
+                file_id: id, status: "converting"
+            });
+
+            // Convert image...
+
+            // Emit completion event
+            window.emit("conversion-progress", ConversionProgress {
+                file_id: id, status: "completed"
+            });
+        }
+    }).await
+}
+```
+
+### Real-Time Progress Tracking
+
+**Event System**: Tauri events bridge Rust backend and React frontend for real-time updates.
+
+```typescript
+// src/hooks/use-file-list.tsx
+useEffect(() => {
+  listen<ConversionProgress>("conversion-progress", (event) => {
+    const {file_id, status, error_message} = event.payload;
+
+    if (status === "converting") {
+      setConvertingFiles(prev => new Set(prev).add(file_id));
+      // Clear previous error/skip states
+    } else if (status === "completed") {
+      setConvertingFiles(prev => { /* remove */ });
+      refresh(); // Update UI
+    } else if (status === "error") {
+      setConvertingFiles(prev => { /* remove */ });
+      setErrorFiles(prev => new Map(prev).set(file_id, error_message));
+    } else if (status === "skipped") {
+      setConvertingFiles(prev => { /* remove */ });
+      setSkippedFiles(prev => new Map(prev).set(file_id, error_message));
+    }
+  });
+}, [refresh]);
+```
+
+**UI Badge States**: File list items show different badges:
+1. **Default**: No badge
+2. **Converting** (amber): `<Loader2 className="animate-spin" />` + "Converting"
+3. **Converted** (blue): `<CheckCircle2 />` + "Converted"
+4. **Error** (red): `<AlertCircle />` + "Error" (with tooltip showing error message)
+5. **Skipped** (amber): `<AlertCircle />` + "Skip" (with tooltip showing skip reason)
+6. **EXIF** (orange): `<Camera />` + "EXIF" (shown when EXIF metadata present)
+
+### Format-Specific Optimization
+
+Different image formats use optimized encoders in `src-tauri/src/converters/`:
+
+- **WebP** (`webp.rs`): Uses `webp` crate (libwebp bindings) for better compression than `image` crate
+- **JPEG** (`jpeg.rs`): Uses `image::codecs::jpeg::JpegEncoder` with quality control
+- **PNG** (`png.rs`): Uses `image::codecs::png::PngEncoder` with compression levels (0-9)
+- **AVIF** (`avif.rs`): Uses `image` crate's AVIF encoder with speed/quality tradeoffs
+- **Other formats**: Falls back to `image` crate's default encoders
+
+### Timestamp Preservation
+
+Original file timestamps (created/modified) can be preserved:
+
+```rust
+pub struct FileTimestamps {
+    pub accessed: SystemTime,
+    pub modified: SystemTime,
+}
+
+// Extracted when adding files from local paths
+let timestamps = std::fs::metadata(&path).ok().and_then(|metadata| {
+    Some(FileTimestamps {
+        accessed: metadata.accessed().ok()?,
+        modified: metadata.modified().ok()?,
+    })
+});
+
+// Applied after conversion if requested
+if preserve_timestamps {
+    filetime::set_file_times(&output_path,
+        FileTime::from_system_time(timestamps.accessed),
+        FileTime::from_system_time(timestamps.modified));
+}
+```
+
+**Note**: URL-sourced files don't have original timestamps (set to `None`).
 
 ## Common Patterns and Gotchas
 
@@ -238,7 +440,7 @@ const result = await invoke("async_command", { data });
 
 // Rust
 #[tauri::command]
-async fn async_command(data: String) -> Result<String, String> {
+pub async fn async_command(data: String) -> Result<String, String> {
     // async Rust code
 }
 ```
@@ -286,198 +488,6 @@ useEffect(() => {
 - File conversion status tracking
 - Background task notifications
 
-### State Management
-For app-wide state shared between Rust and React, use Tauri's state management or pass data through commands.
-
-## Theme Management
-
-**System Theme Integration**: Managed by `next-themes` package with class-based dark mode.
-
-- **Theme Provider**: Uses `next-themes` for theme state management
-- **Dark Mode Implementation**: `.dark` class on root element (not media queries)
-- **CSS Variables**: Theme colors defined in `src/index.css` using oklch color space
-- **System Detection**: Automatically detects and respects system theme preference
-- **Custom Variant**: Uses `@custom-variant dark (&:is(.dark *))` for Tailwind v4 dark mode
-
-## Testing Strategy
-
-- **Frontend**: Standard React testing (not yet configured)
-- **Rust**: Use `cargo test` in `src-tauri/` directory
-- **E2E**: Tauri supports WebDriver integration for full app testing
-
-## Platform-Specific Considerations
-
-Tauri apps run on **macOS, Windows, and Linux**. Consider platform differences when:
-- Working with file paths (use Tauri's path APIs)
-- Using OS-specific features
-- Designing UI (native window controls vary)
-
-## State Management Architecture
-
-**Centralized State in Rust Backend** (refactored from Zustand):
-
-The application uses a **server-side state pattern** where all file data is managed in Rust using `Mutex<Vec<FileItem>>`, with React as a thin UI layer.
-
-### Core Architecture Pattern
-
-**State Flow**: `Rust Backend (Source of Truth)` → `React Context (UI State)` → `Components (View)`
-
-```rust
-// src-tauri/src/lib.rs - Centralized state
-struct FileListState(Mutex<Vec<FileItem>>);
-
-struct FileItem {
-    id: String,
-    name: String,
-    data: Vec<u8>,        // Actual image bytes stored in Rust
-    exif: Option<ExifData>,
-    timestamps: Option<FileTimestamps>,
-    converted: bool,      // Conversion tracking
-    // ...
-}
-```
-
-```typescript
-// src/hooks/use-file-list.tsx - React Context wrapper
-export function FileListProvider({children}) {
-  const [fileList, setFileList] = useState<FileItemResponse[]>([]);
-  const [convertingFiles, setConvertingFiles] = useState<Set<string>>(new Set());
-
-  const refresh = async () => {
-    const list = await invoke<FileItemResponse[]>("get_file_list");
-    setFileList(list);
-  };
-
-  // ... addFileFromPath, removeFile, etc.
-}
-```
-
-### Key Benefits of This Architecture
-
-1. **Single Source of Truth**: File data (including image bytes) lives in Rust memory only
-2. **Efficient Memory**: Frontend only receives metadata (no image bytes transferred)
-3. **Native Performance**: Image processing happens in Rust without serialization overhead
-4. **Automatic Deduplication**: Rust backend prevents duplicate files by path/URL checking
-
-### State Operations
-
-**Adding Files**:
-- `invoke("add_file_from_path")` → Rust reads file → Extracts EXIF → Stores in Mutex
-- Frontend receives `FileItemResponse` (metadata only, no image data)
-- For multiple files (drag-and-drop): batch invoke then single `refresh()` to avoid race conditions
-
-**Converting Images**:
-- Rust clones file data from Mutex → Releases lock immediately
-- Heavy processing in `tokio::task::spawn_blocking` (non-blocking)
-- Real-time progress via Tauri events: `window.emit("conversion-progress", ...)`
-- Updates `converted: true` flag after successful conversion
-
-## Image Conversion System
-
-### Async Conversion Architecture
-
-The conversion system is designed to keep the UI responsive during heavy image processing:
-
-```rust
-// src-tauri/src/lib.rs
-#[tauri::command]
-async fn convert_images(
-    target_format: String,
-    quality: u8,
-    preserve_timestamps: bool,
-    window: tauri::Window,
-    state: tauri::State<'_, FileListState>,
-) -> Result<Vec<ConversionResult>, String> {
-    // 1. Quick lock to clone file data, filtering unconverted files
-    let files_to_convert = {
-        let file_list = state.0.lock().unwrap();
-        file_list.iter()
-            .filter(|f| !f.converted)  // Skip already converted
-            .map(|f| (f.id.clone(), f.name.clone(), f.data.clone(), ...))
-            .collect()
-    }; // Lock released immediately
-
-    // 2. Heavy work in blocking thread pool (doesn't block UI)
-    tokio::task::spawn_blocking(move || {
-        for (id, name, data, ...) in files_to_convert {
-            // Emit progress event
-            window.emit("conversion-progress", ConversionProgress {
-                file_id: id, status: "converting"
-            });
-
-            // Convert image...
-
-            // Emit completion event
-            window.emit("conversion-progress", ConversionProgress {
-                file_id: id, status: "completed"
-            });
-        }
-    }).await
-}
-```
-
-### Real-Time Progress Tracking
-
-**Event System**: Tauri events bridge Rust backend and React frontend for real-time updates.
-
-```typescript
-// src/hooks/use-file-list.tsx
-useEffect(() => {
-  listen<ConversionProgress>("conversion-progress", (event) => {
-    const {file_id, status} = event.payload;
-
-    if (status === "converting") {
-      setConvertingFiles(prev => new Set(prev).add(file_id));
-    } else if (status === "completed") {
-      setConvertingFiles(prev => { /* remove */ });
-      refresh(); // Update UI
-    }
-  });
-}, []);
-```
-
-**UI States**: File list items show 3 states:
-1. **Default**: No badge
-2. **Converting** (amber): `<Loader2 className="animate-spin" />` + "Converting"
-3. **Converted** (green): `<CheckCircle2 />` + "Converted"
-
-### Format-Specific Optimization
-
-Different image formats use optimized encoders:
-
-- **WebP**: Uses `webp` crate (libwebp bindings) for better compression than `image` crate
-- **JPEG**: Uses `image::codecs::jpeg::JpegEncoder` with quality control
-- **PNG**: Uses `image::codecs::png::PngEncoder` with compression levels (0-9)
-- **Other formats**: Falls back to `image` crate's default encoders
-
-### Timestamp Preservation
-
-Original file timestamps (created/modified) can be preserved:
-
-```rust
-struct FileTimestamps {
-    accessed: SystemTime,
-    modified: SystemTime,
-}
-
-// Extracted when adding files from local paths
-let timestamps = std::fs::metadata(&path).ok().and_then(|metadata| {
-    Some(FileTimestamps {
-        accessed: metadata.accessed().ok()?,
-        modified: metadata.modified().ok()?,
-    })
-});
-
-// Applied after conversion if requested
-if preserve_timestamps {
-    filetime::set_file_times(&output_path,
-        FileTime::from_system_time(timestamps.accessed),
-        FileTime::from_system_time(timestamps.modified));
-}
-```
-
-**Note**: URL-sourced files don't have original timestamps (set to `None`).
-
 ## UI Component Development
 
 ### Adding shadcn/ui Components
@@ -518,6 +528,82 @@ Color-coded extension badges are used in `FileListItem` component:
   - `formatExtensionDisplay(ext)` - Formats extension for display (uppercase, max 4 chars)
 - Supported formats: webp, svg, png, jpg, jpeg, gif, bmp, tiff, avif, heic, heif
 - Each format has distinct color scheme for light/dark mode
+
+### Icon Design Patterns
+
+When styling Lucide React icons with fill/stroke:
+- **fill**: Background/inner color of the icon
+- **stroke**: Outline/border color of the icon
+- Use contrasting colors for visual depth (e.g., `fill-blue-400 stroke-blue-700`)
+- Always provide both light and dark mode variants
+- Example: `<FileCheck className="fill-blue-400 stroke-blue-700 dark:fill-white dark:stroke-blue-500" />`
+
+## Theme Management
+
+**System Theme Integration**: Managed by `next-themes` package with class-based dark mode.
+
+- **Theme Provider**: Uses `next-themes` for theme state management
+- **Dark Mode Implementation**: `.dark` class on root element (not media queries)
+- **CSS Variables**: Theme colors defined in `src/index.css` using oklch color space
+- **System Detection**: Automatically detects and respects system theme preference
+- **Custom Variant**: Uses `@custom-variant dark (&:is(.dark *))` for Tailwind v4 dark mode
+
+## Development Server Configuration
+
+Vite dev server runs on **port 1420** (fixed port for Tauri integration). If port conflict occurs, Vite will fail (strict mode enabled).
+
+HMR (Hot Module Reload) uses port 1421 for WebSocket communication with Tauri.
+
+## Build Process
+
+**Frontend build**: Uses TypeScript 7.0 native preview (`tsgo`) + Vite
+- `bun build` command: `tsgo && vite build`
+- TypeScript compilation must pass (no type errors)
+- Vite bundles to `dist/`
+
+**Tauri build**: Creates platform-specific installers in `src-tauri/target/release/`
+- macOS: `.dmg` and `.app`
+- Windows: `.msi` and `.exe`
+- Linux: `.deb`, `.AppImage`
+
+**Rust library name**: `anyimage_converter_lib` (note: uses snake_case for crate name)
+
+## Technology Stack
+
+**Frontend**:
+- React 19.1
+- TypeScript 7.0 (native preview via `@typescript/native-preview`)
+- Tailwind CSS v4 with `tailwindcss-animate` plugin
+- Vite 7.0
+- UI Components: Radix UI primitives + custom components
+- Styling: `clsx` + `tailwind-merge` via `cn()` utility
+- Icons: Lucide React
+- Toast notifications: Sonner
+
+**Backend (Rust)**:
+- Tauri 2
+- Image processing: `image`, `resvg`, `usvg`, `libheif-rs`, `webp`
+- Async runtime: `tokio`
+- Serialization: `serde`, `serde_json`
+- EXIF extraction: `kamadak-exif`
+- File timestamps: `filetime`
+
+**Tooling**:
+- Biome for linting/formatting (replaces ESLint + Prettier)
+- Bun as package manager and runtime
+
+## Testing Strategy
+
+- **Frontend**: Standard React testing (not yet configured)
+- **Rust**: Use `cargo test` in `src-tauri/` directory
+- **E2E**: Tauri supports WebDriver integration for full app testing
+
+## Platform-Specific Considerations
+
+Tauri apps run on **macOS, Windows, and Linux**. Consider platform differences when:
+- Working with file paths (use Tauri's path APIs)
+- Using OS-specific features
+- Designing UI (native window controls vary)
 
 ## Important Notes
 
