@@ -85,7 +85,7 @@ export function Main() {
         ) : (
           <div className="m-4 flex flex-1 flex-col items-center justify-center rounded-lg transition-colors select-none">
             <div className="relative mb-6 p-8">
-              <div className="absolute inset-0 rounded-full bg-gradient-to-br from-slate-200/30 via-slate-300/30 to-slate-200/30 blur-3xl dark:from-slate-800/30 dark:via-slate-700/30 dark:to-slate-800/30" />
+              <div className="absolute inset-0 rounded-full bg-gradient-to-br from-slate-300/50 via-slate-400/50 to-slate-300/50 blur-3xl dark:from-slate-800/30 dark:via-slate-700/30 dark:to-slate-800/30" />
               <Sparkles className="relative size-16 text-slate-400 dark:text-slate-500" />
             </div>
             {isDragActive ? (

@@ -15,7 +15,7 @@
         "title": "AnyImage Converter",
         "width": 600,
         "height": 700,
-        "minWidth": 500,
+        "minWidth": 550,
         "maxWidth": 800,
         "minHeight": 400
       }
