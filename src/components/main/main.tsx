@@ -1,6 +1,6 @@
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import {readFile} from "@tauri-apps/plugin-fs";
-import {Upload} from "lucide-react";
+import {Sparkles} from "lucide-react";
 import {OverlayScrollbarsComponent} from "overlayscrollbars-react";
 import {useEffect, useState} from "react";
 import {FileListItem} from "@/components/main/file-list-item";
@@ -83,8 +83,11 @@ export function Main() {
             ))}
           </ul>
         ) : (
-          <div className="m-4 flex flex-1 flex-col items-center justify-center rounded-lg transition-colors">
-            <Upload className="mb-4 size-12 text-muted-foreground/40" />
+          <div className="m-4 flex flex-1 flex-col items-center justify-center rounded-lg transition-colors select-none">
+            <div className="relative mb-6 p-8">
+              <div className="absolute inset-0 rounded-full bg-gradient-to-br from-slate-200/30 via-slate-300/30 to-slate-200/30 blur-3xl dark:from-slate-800/30 dark:via-slate-700/30 dark:to-slate-800/30" />
+              <Sparkles className="relative size-16 text-slate-400 dark:text-slate-500" />
+            </div>
             {isDragActive ? (
               <p className="text-lg text-muted-foreground/60">
                 Drop the files here...

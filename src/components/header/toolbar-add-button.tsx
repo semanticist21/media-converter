@@ -1,29 +1,18 @@
 import {open} from "@tauri-apps/plugin-dialog";
 import {readFile} from "@tauri-apps/plugin-fs";
 import {Plus} from "lucide-react";
-import {useState} from "react";
 import {Button} from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {Input} from "@/components/ui/input";
 import {useFileStore} from "@/stores/file-store";
+import {ToolbarAddUrlButton} from "./toolbar-add-url-button";
 
 export function ToolbarAddButton() {
   const addFiles = useFileStore((state) => state.addFiles);
-  const [isUrlDialogOpen, setIsUrlDialogOpen] = useState(false);
-  const [url, setUrl] = useState("");
 
   return (
     <DropdownMenu>
@@ -79,59 +68,8 @@ export function ToolbarAddButton() {
         >
           From device
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setIsUrlDialogOpen(true)}>
-          From url
-        </DropdownMenuItem>
+        <ToolbarAddUrlButton />
       </DropdownMenuContent>
-
-      <Dialog open={isUrlDialogOpen} onOpenChange={setIsUrlDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Image from URL</DialogTitle>
-            <DialogDescription>
-              Enter the URL of the image you want to convert.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid gap-4 py-4">
-            <Input
-              placeholder="https://example.com/image.jpg"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  // TODO: URL에서 이미지 가져오기
-                  console.log("Fetch image from URL:", url);
-                  setIsUrlDialogOpen(false);
-                  setUrl("");
-                }
-              }}
-            />
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsUrlDialogOpen(false);
-                setUrl("");
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                // TODO: URL에서 이미지 가져오기
-                console.log("Fetch image from URL:", url);
-                setIsUrlDialogOpen(false);
-                setUrl("");
-              }}
-            >
-              Add Image
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </DropdownMenu>
   );
 }
