@@ -5,12 +5,12 @@ mod models;
 mod state;
 
 use state::FileListState;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .manage(FileListState(Mutex::new(Vec::new())))
+        .manage(FileListState(Arc::new(Mutex::new(Vec::new()))))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())

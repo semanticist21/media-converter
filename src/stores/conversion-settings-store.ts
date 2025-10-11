@@ -19,6 +19,7 @@ type ImageFormat =
  * @property {boolean} useSourceDirectory - 원본 파일과 같은 폴더에 저장할지 여부
  * @property {boolean} createSubfolder - 원본 폴더 내에 하위 폴더 생성 여부 (useSourceDirectory가 true일 때만 적용)
  * @property {string} subfolderName - 생성할 하위 폴더 이름 (createSubfolder가 true일 때 사용)
+ * @property {string} urlFilesFallbackDir - URL로 가져온 파일의 기본 저장 폴더 (빈 문자열이면 Downloads 폴더 사용)
  * @property {Record<ImageFormat, number>} qualityByFormat - 각 포맷별 품질 설정 (0-100 또는 압축 레벨)
  * @property {number} avifSpeed - AVIF 인코딩 속도 (1-10, 낮을수록 압축률 높음)
  * @property {number} maxConcurrentConversions - 동시 변환 개수 (0 = 자동/CPU 코어 수, 1 이상 = 수동 설정)
@@ -30,6 +31,7 @@ export interface ConversionSettings {
   useSourceDirectory: boolean;
   createSubfolder: boolean;
   subfolderName: string;
+  urlFilesFallbackDir: string;
   qualityByFormat: Record<ImageFormat, number>;
   avifSpeed: number;
   maxConcurrentConversions: number;
@@ -43,6 +45,7 @@ interface ConversionSettingsStore extends ConversionSettings {
   setUseSourceDirectory: (value: boolean) => void;
   setCreateSubfolder: (value: boolean) => void;
   setSubfolderName: (value: string) => void;
+  setUrlFilesFallbackDir: (value: string) => void;
   setQualityForFormat: (format: ImageFormat, value: number) => void;
   setAvifSpeed: (value: number) => void;
   setMaxConcurrentConversions: (value: number) => void;
@@ -60,6 +63,7 @@ const defaultSettings: ConversionSettings = {
   useSourceDirectory: false,
   createSubfolder: false,
   subfolderName: "converted",
+  urlFilesFallbackDir: "", // 빈 문자열이면 backend에서 Downloads 폴더 사용
   qualityByFormat: {
     webp: 80,
     jpeg: 80,
@@ -88,6 +92,7 @@ export const useConversionSettings = create<ConversionSettingsStore>()(
       setUseSourceDirectory: (value) => set({useSourceDirectory: value}),
       setCreateSubfolder: (value) => set({createSubfolder: value}),
       setSubfolderName: (value) => set({subfolderName: value}),
+      setUrlFilesFallbackDir: (value) => set({urlFilesFallbackDir: value}),
       setQualityForFormat: (format, value) =>
         set((state) => ({
           qualityByFormat: {

@@ -215,6 +215,7 @@ pub async fn convert_images(
     max_concurrent: usize,
     create_subfolder: bool,
     subfolder_name: String,
+    url_files_fallback_dir: String,
     window: tauri::Window,
     state: tauri::State<'_, FileListState>,
 ) -> Result<Vec<ConversionResult>, String> {
@@ -266,6 +267,9 @@ pub async fn convert_images(
     // Create channel for ordered results
     let (result_tx, mut result_rx) = mpsc::channel(files_to_convert.len());
 
+    // Clone state Arc for async tasks
+    let state_arc = state.0.clone();
+
     // Process files concurrently with order preservation
     for (index, (id, name, original_size, data, exif_raw_bytes, timestamps, source_path)) in
         files_to_convert.into_iter().enumerate()
@@ -274,9 +278,11 @@ pub async fn convert_images(
         let target_format = target_format.clone();
         let output_dir = output_dir.clone();
         let subfolder_name = subfolder_name.clone();
+        let url_fallback = url_files_fallback_dir.clone();
         let semaphore = Arc::clone(&semaphore);
         let result_tx = result_tx.clone();
         let avif_speed_clone = avif_speed;
+        let state_clone = state_arc.clone();
 
         tokio::spawn(async move {
             // Acquire semaphore permit to limit concurrent processing
@@ -589,19 +595,56 @@ pub async fn convert_images(
                             }
                         }
                         None => {
-                            let error_msg =
-                                "Cannot use source directory for URL-based files".to_string();
-                            let _ = window.emit(
-                                "conversion-progress",
-                                ConversionProgress {
-                                    file_id: id.clone(),
-                                    file_name: name.clone(),
-                                    status: "error".to_string(),
-                                    error_message: Some(error_msg.clone()),
-                                },
-                            );
-                            eprintln!("{}", error_msg);
-                            return None;
+                            // URL 파일의 경우 fallback 디렉토리 사용
+                            let fallback_dir = if url_fallback.is_empty() {
+                                // 빈 문자열이면 Downloads 폴더 사용
+                                match dirs::download_dir() {
+                                    Some(dir) => dir,
+                                    None => {
+                                        let error_msg = "Cannot determine Downloads folder".to_string();
+                                        let _ = window.emit(
+                                            "conversion-progress",
+                                            ConversionProgress {
+                                                file_id: id.clone(),
+                                                file_name: name.clone(),
+                                                status: "error".to_string(),
+                                                error_message: Some(error_msg.clone()),
+                                            },
+                                        );
+                                        eprintln!("{}", error_msg);
+                                        return None;
+                                    }
+                                }
+                            } else {
+                                // 사용자가 지정한 폴더 사용
+                                std::path::PathBuf::from(&url_fallback)
+                            };
+
+                            // Subfolder 처리
+                            let final_dir = if create_subfolder && !subfolder_name.is_empty() {
+                                let subfolder_path = fallback_dir.join(&subfolder_name);
+                                if !subfolder_path.exists() {
+                                    if let Err(e) = std::fs::create_dir_all(&subfolder_path) {
+                                        let error_msg = format!("Failed to create subfolder: {}", e);
+                                        let _ = window.emit(
+                                            "conversion-progress",
+                                            ConversionProgress {
+                                                file_id: id.clone(),
+                                                file_name: name.clone(),
+                                                status: "error".to_string(),
+                                                error_message: Some(error_msg.clone()),
+                                            },
+                                        );
+                                        eprintln!("{}", error_msg);
+                                        return None;
+                                    }
+                                }
+                                subfolder_path
+                            } else {
+                                fallback_dir
+                            };
+
+                            final_dir.join(&output_name)
                         }
                     }
                 } else {
@@ -811,6 +854,14 @@ pub async fn convert_images(
                         error_message: None,
                     },
                 );
+
+                // Mark file as converted immediately
+                {
+                    let mut file_list = state_clone.lock().unwrap();
+                    if let Some(file) = file_list.iter_mut().find(|f| f.id == id) {
+                        file.converted = true;
+                    }
+                }
 
                 // Return conversion result
                 Some(ConversionResult {

@@ -45,6 +45,7 @@ export function Footer() {
     useSourceDirectory,
     createSubfolder,
     subfolderName,
+    urlFilesFallbackDir,
     setTargetFormat,
     setQualityForFormat,
     setAvifSpeed,
@@ -341,6 +342,7 @@ export function Footer() {
                     maxConcurrent: maxConcurrentConversions,
                     createSubfolder,
                     subfolderName,
+                    urlFilesFallbackDir,
                   },
                 );
 

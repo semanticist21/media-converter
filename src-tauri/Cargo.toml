@@ -65,6 +65,9 @@ num_cpus = "1.16"
 # Async utilities for concurrent task handling
 futures = "0.3"
 
+# Platform directories (Downloads, Documents, etc.)
+dirs = "5.0"
+
 # AVIF encoding with speed control (faster than image crate default)
 ravif = "0.11"
 rgb = "0.8"

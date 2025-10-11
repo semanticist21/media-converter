@@ -1,4 +1,6 @@
 import {invoke} from "@tauri-apps/api/core";
+import {open} from "@tauri-apps/plugin-dialog";
+import {Folder, FolderTree, Link, Zap} from "lucide-react";
 import {useEffect, useId, useState} from "react";
 import {Button} from "@/components/ui/button";
 import {Checkbox} from "@/components/ui/checkbox";
@@ -28,11 +30,31 @@ export function SettingsModal({open, onOpenChange}: SettingsModalProps) {
     setCreateSubfolder,
     subfolderName,
     setSubfolderName,
+    urlFilesFallbackDir,
+    setUrlFilesFallbackDir,
   } = useConversionSettings();
   const [cpuCores, setCpuCores] = useState<number>(0);
   const sliderId = useId();
+  const buttonId = useId();
   const subfolderCheckboxId = useId();
   const subfolderInputId = useId();
+
+  // 폴더 선택 핸들러
+  const handleSelectFolder = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Select default folder for URL files",
+      });
+
+      if (selected && !Array.isArray(selected)) {
+        setUrlFilesFallbackDir(selected);
+      }
+    } catch (error) {
+      console.error("Failed to select folder:", error);
+    }
+  };
 
   // Fetch CPU core count
   useEffect(() => {
@@ -48,7 +70,7 @@ export function SettingsModal({open, onOpenChange}: SettingsModalProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px] max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
@@ -56,68 +78,127 @@ export function SettingsModal({open, onOpenChange}: SettingsModalProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-6 py-4">
-          {/* Max Concurrent Conversions */}
+        <div className="grid gap-6 py-4 overflow-y-auto pr-2">
+          {/* Performance Settings */}
           <div className="grid gap-3">
-            <div className="flex items-center justify-between">
-              <label htmlFor={sliderId} className="text-sm font-medium">
-                Max Concurrent Conversions
-              </label>
-              <output className="text-sm font-medium text-muted-foreground">
-                {displayValue}
-              </output>
+            <div className="flex items-center gap-2">
+              <Zap className="size-4 text-amber-500" />
+              <h3 className="text-sm font-semibold">Performance</h3>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Maximum number of images to convert simultaneously.{" "}
-              <strong>0 = Auto</strong> (default: uses CPU core count of{" "}
-              {cpuCores})
-            </p>
-            <Slider
-              id={sliderId}
-              value={[maxConcurrentConversions]}
-              onValueChange={(value) => setMaxConcurrentConversions(value[0])}
-              min={0}
-              max={cpuCores * 2}
-              step={1}
-            />
+            <div className="ml-6 grid gap-3">
+              <div className="flex items-center justify-between">
+                <label htmlFor={sliderId} className="text-sm font-medium">
+                  Max Concurrent Conversions
+                </label>
+                <output className="text-sm font-medium text-muted-foreground">
+                  {displayValue}
+                </output>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Maximum number of images to convert simultaneously.{" "}
+                <strong>0 = Auto</strong> (default: uses CPU core count of{" "}
+                {cpuCores})
+              </p>
+              <Slider
+                id={sliderId}
+                value={[maxConcurrentConversions]}
+                onValueChange={(value) => setMaxConcurrentConversions(value[0])}
+                min={0}
+                max={cpuCores * 2}
+                step={1}
+              />
+            </div>
+          </div>
+
+          {/* URL Files Default Folder */}
+          <div className="grid gap-3">
+            <div className="flex items-center gap-2">
+              <Link className="size-4 text-blue-500" />
+              <h3 className="text-sm font-semibold">URL Files</h3>
+            </div>
+            <div className="ml-6 grid gap-3">
+              <label className="text-sm font-medium" htmlFor={buttonId}>
+                Default Save Location
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Where to save images fetched from URLs when "Use source folder"
+                is enabled. Leave empty to use Downloads folder.
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  value={urlFilesFallbackDir || "Downloads (default)"}
+                  readOnly
+                  placeholder="Downloads (default)"
+                  className="flex-1"
+                />
+                <Button
+                  id={buttonId}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSelectFolder}
+                  className="shrink-0"
+                >
+                  <Folder className="size-4 mr-2" />
+                  Choose
+                </Button>
+              </div>
+              {urlFilesFallbackDir && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setUrlFilesFallbackDir("")}
+                  className="ml-auto text-xs"
+                >
+                  Reset to default
+                </Button>
+              )}
+            </div>
           </div>
 
           {/* Subfolder Options - Only show when Use Source Folder is enabled */}
           {useSourceDirectory && (
             <div className="grid gap-3">
               <div className="flex items-center gap-2">
-                <Checkbox
-                  id={subfolderCheckboxId}
-                  checked={createSubfolder}
-                  onCheckedChange={(checked) =>
-                    setCreateSubfolder(checked === true)
-                  }
-                />
-                <label
-                  htmlFor={subfolderCheckboxId}
-                  className="text-sm font-medium"
-                >
-                  Create subfolder in source directory
-                </label>
+                <FolderTree className="size-4 text-green-500" />
+                <h3 className="text-sm font-semibold">Source Directory</h3>
               </div>
-              <p className="text-xs text-muted-foreground">
-                When enabled, converted images will be saved in a subfolder
-                within the original file's directory. If disabled, images are
-                saved directly in the source folder.
-              </p>
-              <Input
-                id={subfolderInputId}
-                value={subfolderName}
-                onChange={(e) => setSubfolderName(e.target.value)}
-                disabled={!createSubfolder}
-                placeholder="converted"
-                className="mt-1"
-              />
+              <div className="ml-6 grid gap-3">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id={subfolderCheckboxId}
+                    checked={createSubfolder}
+                    onCheckedChange={(checked) =>
+                      setCreateSubfolder(checked === true)
+                    }
+                  />
+                  <label
+                    htmlFor={subfolderCheckboxId}
+                    className="text-sm font-medium cursor-pointer"
+                  >
+                    Create subfolder in source directory
+                  </label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  When enabled, converted images will be saved in a subfolder
+                  within the original file's directory. If disabled, images are
+                  saved directly in the source folder.
+                </p>
+                <Input
+                  id={subfolderInputId}
+                  value={subfolderName}
+                  onChange={(e) => setSubfolderName(e.target.value)}
+                  disabled={!createSubfolder}
+                  placeholder="converted"
+                  className="mt-1"
+                />
+              </div>
             </div>
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Done
           </Button>
