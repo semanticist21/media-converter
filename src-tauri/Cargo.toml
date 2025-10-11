@@ -46,3 +46,10 @@ kamadak-exif = "0.5"
 # UUID generation for file IDs
 uuid = { version = "1.0", features = ["v4", "serde"] }
 
+# WebP encoding with libwebp (better compression than image crate)
+webp = "0.3"
+
+# File timestamp preservation
+filetime = "0.2"
+tokio = { version = "1.47.1", features = ["rt"] }
+

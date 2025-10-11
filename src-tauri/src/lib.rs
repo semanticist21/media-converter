@@ -1,6 +1,8 @@
+use image::ImageEncoder;
 use serde::Serialize;
 use std::io::Cursor;
 use std::sync::Mutex;
+use tauri::Emitter;
 use uuid::Uuid;
 
 // EXIF metadata structure
@@ -20,6 +22,13 @@ struct ExifData {
     gps_longitude: Option<String>,
 }
 
+// File timestamps for preservation
+#[derive(Clone)]
+struct FileTimestamps {
+    accessed: std::time::SystemTime,
+    modified: std::time::SystemTime,
+}
+
 // Internal file item (stores actual image bytes)
 struct FileItem {
     id: String,
@@ -30,6 +39,8 @@ struct FileItem {
     source_path: Option<String>,
     source_url: Option<String>,
     exif: Option<ExifData>,
+    timestamps: Option<FileTimestamps>,
+    converted: bool,
 }
 
 // Response type for frontend (no image bytes)
@@ -42,6 +53,7 @@ struct FileItemResponse {
     source_path: Option<String>,
     source_url: Option<String>,
     exif: Option<ExifData>,
+    converted: bool,
 }
 
 impl FileItem {
@@ -54,6 +66,7 @@ impl FileItem {
             source_path: self.source_path.clone(),
             source_url: self.source_url.clone(),
             exif: self.exif.clone(),
+            converted: self.converted,
         }
     }
 }
@@ -192,6 +205,15 @@ fn add_file_from_path(
     // Extract EXIF
     let exif = extract_exif_from_bytes(&data);
 
+    // Extract timestamps from original file
+    let timestamps = std::fs::metadata(&path)
+        .ok()
+        .and_then(|metadata| {
+            let accessed = metadata.accessed().ok()?;
+            let modified = metadata.modified().ok()?;
+            Some(FileTimestamps { accessed, modified })
+        });
+
     // Check for duplicates
     let mut file_list = state.0.lock().unwrap();
     if file_list.iter().any(|f| f.source_path.as_ref() == Some(&path)) {
@@ -208,6 +230,8 @@ fn add_file_from_path(
         source_path: Some(path),
         source_url: None,
         exif,
+        timestamps,
+        converted: false,
     };
 
     let response = file_item.to_response();
@@ -272,7 +296,7 @@ async fn add_file_from_url(
         return Err("File already added".to_string());
     }
 
-    // Create file item
+    // Create file item (URL files don't have timestamps)
     let file_item = FileItem {
         id: Uuid::new_v4().to_string(),
         name: file_name,
@@ -282,6 +306,8 @@ async fn add_file_from_url(
         source_path: None,
         source_url: Some(url),
         exif,
+        timestamps: None,
+        converted: false,
     };
 
     let response = file_item.to_response();
@@ -335,6 +361,222 @@ fn save_file(
     Ok(())
 }
 
+// Conversion result for each file
+#[derive(Serialize)]
+struct ConversionResult {
+    original_name: String,
+    converted_name: String,
+    original_size: u64,
+    converted_size: u64,
+    saved_path: String,
+}
+
+// Event payload for conversion progress
+#[derive(Serialize, Clone)]
+struct ConversionProgress {
+    file_id: String,
+    file_name: String,
+    status: String, // "converting" | "completed" | "error"
+}
+
+#[tauri::command]
+async fn convert_images(
+    target_format: String,
+    quality: u8,
+    _preserve_exif: bool,
+    preserve_timestamps: bool,
+    output_dir: String,
+    window: tauri::Window,
+    state: tauri::State<'_, FileListState>,
+) -> Result<Vec<ConversionResult>, String> {
+    // Clone file list data to release Mutex lock quickly, filter out already converted files
+    let files_to_convert: Vec<(String, String, u64, Vec<u8>, Option<FileTimestamps>)> = {
+        let file_list = state.0.lock().unwrap();
+
+        file_list
+            .iter()
+            .filter(|f| !f.converted) // Skip already converted files
+            .map(|f| {
+                (
+                    f.id.clone(),
+                    f.name.clone(),
+                    f.size,
+                    f.data.clone(),
+                    f.timestamps.clone(),
+                )
+            })
+            .collect()
+    }; // Mutex lock released here
+
+    if files_to_convert.is_empty() {
+        return Err("No files to convert (all files already converted)".to_string());
+    }
+
+    // Perform heavy conversion work in blocking thread pool
+    let results = tokio::task::spawn_blocking(move || {
+        let mut results = Vec::new();
+
+        for (id, name, original_size, data, timestamps) in files_to_convert {
+            // Emit conversion start event
+            let _ = window.emit(
+                "conversion-progress",
+                ConversionProgress {
+                    file_id: id.clone(),
+                    file_name: name.clone(),
+                    status: "converting".to_string(),
+                },
+            );
+
+            // Load image from bytes
+            let img = match image::load_from_memory(&data) {
+                Ok(img) => img,
+                Err(e) => {
+                    let _ = window.emit(
+                        "conversion-progress",
+                        ConversionProgress {
+                            file_id: id.clone(),
+                            file_name: name.clone(),
+                            status: "error".to_string(),
+                        },
+                    );
+                    return Err(format!("Failed to decode image {}: {}", name, e));
+                }
+            };
+
+            // Generate output filename
+            let output_name = format!(
+                "{}.{}",
+                std::path::Path::new(&name)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("image"),
+                target_format
+            );
+
+            let output_path = std::path::Path::new(&output_dir).join(&output_name);
+
+            // Convert based on target format
+            let converted_data = match target_format.as_str() {
+                "webp" => convert_to_webp(&img, quality)?,
+                "jpeg" | "jpg" => convert_to_jpeg(&img, quality)?,
+                "png" => convert_to_png(&img, quality)?,
+                _ => {
+                    // Use image crate's default encoder for other formats
+                    let mut buffer = Vec::new();
+                    img.write_to(
+                        &mut std::io::Cursor::new(&mut buffer),
+                        image::ImageFormat::from_extension(&target_format)
+                            .ok_or_else(|| format!("Unsupported format: {}", target_format))?,
+                    )
+                    .map_err(|e| format!("Failed to encode {}: {}", target_format, e))?;
+                    buffer
+                }
+            };
+
+            // Write to file
+            std::fs::write(&output_path, &converted_data)
+                .map_err(|e| format!("Failed to write file: {}", e))?;
+
+            // Preserve timestamps if requested and available
+            if preserve_timestamps {
+                if let Some(ref ts) = timestamps {
+                    let _ = filetime::set_file_times(
+                        &output_path,
+                        filetime::FileTime::from_system_time(ts.accessed),
+                        filetime::FileTime::from_system_time(ts.modified),
+                    );
+                }
+            }
+
+            // Emit conversion complete event
+            let _ = window.emit(
+                "conversion-progress",
+                ConversionProgress {
+                    file_id: id.clone(),
+                    file_name: name.clone(),
+                    status: "completed".to_string(),
+                },
+            );
+
+            results.push(ConversionResult {
+                original_name: name,
+                converted_name: output_name,
+                original_size,
+                converted_size: converted_data.len() as u64,
+                saved_path: output_path.to_string_lossy().to_string(),
+            });
+        }
+
+        Ok::<Vec<ConversionResult>, String>(results)
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))??;
+
+    // Mark converted files
+    {
+        let mut file_list = state.0.lock().unwrap();
+        for result in &results {
+            if let Some(file) = file_list
+                .iter_mut()
+                .find(|f| f.name == result.original_name)
+            {
+                file.converted = true;
+            }
+        }
+    }
+
+    Ok(results)
+}
+
+// Convert to WebP using libwebp (better compression)
+fn convert_to_webp(img: &image::DynamicImage, quality: u8) -> Result<Vec<u8>, String> {
+    use webp::Encoder;
+
+    let rgba_img = img.to_rgba8();
+    let (width, height) = rgba_img.dimensions();
+
+    let encoder = Encoder::from_rgba(&rgba_img, width, height);
+    let webp_data = encoder.encode(quality as f32);
+
+    Ok(webp_data.to_vec())
+}
+
+// Convert to JPEG
+fn convert_to_jpeg(img: &image::DynamicImage, quality: u8) -> Result<Vec<u8>, String> {
+    let mut buffer = Vec::new();
+    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buffer, quality);
+
+    let rgb_img = img.to_rgb8();
+    encoder
+        .encode(
+            rgb_img.as_raw(),
+            img.width(),
+            img.height(),
+            image::ExtendedColorType::Rgb8,
+        )
+        .map_err(|e| format!("JPEG encoding failed: {}", e))?;
+
+    Ok(buffer)
+}
+
+// Convert to PNG
+fn convert_to_png(img: &image::DynamicImage, _compression: u8) -> Result<Vec<u8>, String> {
+    let mut buffer = Vec::new();
+    let encoder = image::codecs::png::PngEncoder::new(&mut buffer);
+
+    let rgba_img = img.to_rgba8();
+    encoder
+        .write_image(
+            rgba_img.as_raw(),
+            img.width(),
+            img.height(),
+            image::ExtendedColorType::Rgba8,
+        )
+        .map_err(|e| format!("PNG encoding failed: {}", e))?;
+
+    Ok(buffer)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -348,7 +590,8 @@ pub fn run() {
             remove_file,
             clear_files,
             get_file_list,
-            save_file
+            save_file,
+            convert_images
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

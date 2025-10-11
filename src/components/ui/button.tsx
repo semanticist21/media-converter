@@ -1,6 +1,6 @@
 import {Slot} from "@radix-ui/react-slot";
 import {cva, type VariantProps} from "class-variance-authority";
-import {Loader} from "lucide-react";
+import {Loader2} from "lucide-react";
 import type * as React from "react";
 import {cn} from "@/lib/utils";
 
@@ -63,7 +63,7 @@ function Button({
       </span>
       {loading && (
         <div className="absolute inset-0 flex items-center justify-center">
-          <Loader className="animate-spin" />
+          <Loader2 className="animate-spin" />
         </div>
       )}
     </Comp>

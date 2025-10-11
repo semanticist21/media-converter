@@ -1,4 +1,5 @@
 import {invoke} from "@tauri-apps/api/core";
+import {listen} from "@tauri-apps/api/event";
 import {
   createContext,
   useCallback,
@@ -30,11 +31,19 @@ export interface FileItemResponse {
   source_path?: string;
   source_url?: string;
   exif?: ExifData;
+  converted: boolean;
+}
+
+export interface ConversionProgress {
+  file_id: string;
+  file_name: string;
+  status: "converting" | "completed" | "error";
 }
 
 interface FileListContextType {
   fileList: FileItemResponse[];
   isLoading: boolean;
+  convertingFiles: Set<string>; // IDs of files currently being converted
   addFileFromPath: (path: string) => Promise<void>;
   addFileFromUrl: (url: string) => Promise<void>;
   removeFile: (id: string) => Promise<void>;
@@ -53,6 +62,9 @@ export function FileListProvider({
 }): React.JSX.Element {
   const [fileList, setFileList] = useState<FileItemResponse[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [convertingFiles, setConvertingFiles] = useState<Set<string>>(
+    new Set(),
+  );
 
   const refresh = useCallback(async () => {
     try {
@@ -62,6 +74,35 @@ export function FileListProvider({
       console.error("Failed to get file list:", error);
     }
   }, []);
+
+  // Listen for conversion progress events
+  useEffect(() => {
+    const unlisten = listen<ConversionProgress>(
+      "conversion-progress",
+      (event) => {
+        const {file_id, status} = event.payload;
+
+        if (status === "converting") {
+          setConvertingFiles((prev) => new Set(prev).add(file_id));
+        } else if (status === "completed" || status === "error") {
+          setConvertingFiles((prev) => {
+            const next = new Set(prev);
+            next.delete(file_id);
+            return next;
+          });
+
+          // Refresh file list to update converted status
+          if (status === "completed") {
+            refresh();
+          }
+        }
+      },
+    );
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [refresh]);
 
   const addFileFromPath = useCallback(
     async (path: string) => {
@@ -128,6 +169,7 @@ export function FileListProvider({
       value={{
         fileList,
         isLoading,
+        convertingFiles,
         addFileFromPath,
         addFileFromUrl,
         removeFile,
