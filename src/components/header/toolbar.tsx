@@ -22,7 +22,6 @@ export function Toolbar() {
 
         {/* Right: App Actions */}
         <ButtonGroup>
-          <ToolbarHistoryButton />
           <ButtonGroupSeparator />
           <ToolbarThemeToggleButton />
           <ButtonGroupSeparator />

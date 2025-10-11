@@ -1,7 +1,9 @@
+mod avif;
 mod jpeg;
 mod png;
 mod webp;
 
+pub use avif::convert_to_avif;
 pub use jpeg::convert_to_jpeg;
 pub use png::convert_to_png;
 pub use webp::convert_to_webp;

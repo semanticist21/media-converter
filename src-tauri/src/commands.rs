@@ -1,7 +1,9 @@
+use std::sync::Arc;
 use tauri::Emitter;
+use tokio::sync::{mpsc, Semaphore};
 use uuid::Uuid;
 
-use crate::converters::{convert_to_jpeg, convert_to_png, convert_to_webp};
+use crate::converters::{convert_to_avif, convert_to_jpeg, convert_to_png, convert_to_webp};
 use crate::exif::{extract_exif_from_bytes, extract_exif_raw_bytes};
 use crate::models::{
     ConversionProgress, ConversionResult, FileItem, FileItemResponse, FileTimestamps,
@@ -191,6 +193,7 @@ pub fn save_file(
 pub async fn convert_images(
     target_format: String,
     quality: u8,
+    avif_speed: u8,
     preserve_exif: bool,
     preserve_timestamps: bool,
     output_dir: String,
@@ -233,11 +236,30 @@ pub async fn convert_images(
     // Check if using source directory mode
     let use_source_dir = output_dir == "USE_SOURCE_DIR";
 
-    // Perform heavy conversion work in blocking thread pool
-    let results = tokio::task::spawn_blocking(move || {
-        let mut results = Vec::new();
+    // Get CPU core count for concurrent processing
+    let max_concurrent = num_cpus::get();
+    let semaphore = Arc::new(Semaphore::new(max_concurrent));
 
-        for (id, name, original_size, data, exif_raw_bytes, timestamps, source_path) in files_to_convert {
+    // Create channel for ordered results
+    let (result_tx, mut result_rx) = mpsc::channel(files_to_convert.len());
+
+    // Process files concurrently with order preservation
+    for (index, (id, name, original_size, data, exif_raw_bytes, timestamps, source_path)) in
+        files_to_convert.into_iter().enumerate()
+    {
+        let window = window.clone();
+        let target_format = target_format.clone();
+        let output_dir = output_dir.clone();
+        let semaphore = Arc::clone(&semaphore);
+        let result_tx = result_tx.clone();
+        let avif_speed_clone = avif_speed;
+
+        tokio::spawn(async move {
+            // Acquire semaphore permit to limit concurrent processing
+            let _permit = semaphore.acquire().await.unwrap();
+
+            // Perform heavy conversion work in blocking thread pool
+            let result = tokio::task::spawn_blocking(move || {
             // Emit conversion start event
             let _ = window.emit(
                 "conversion-progress",
@@ -264,7 +286,7 @@ pub async fn convert_images(
                         },
                     );
                     eprintln!("{}", error_msg);
-                    continue; // Continue with next file instead of returning error
+                    return None;
                 }
             };
 
@@ -302,7 +324,7 @@ pub async fn convert_images(
                                     },
                                 );
                                 eprintln!("{}", error_msg);
-                                continue;
+                                return None;
                             }
                         }
                     }
@@ -318,7 +340,7 @@ pub async fn convert_images(
                             },
                         );
                         eprintln!("{}", error_msg);
-                        continue;
+                        return None;
                     }
                 }
             } else {
@@ -336,7 +358,7 @@ pub async fn convert_images(
                         error_message: Some("File already exists".to_string()),
                     },
                 );
-                continue; // Skip this file
+                return None;
             }
 
             // Convert based on target format
@@ -359,7 +381,7 @@ pub async fn convert_images(
                         },
                     );
                     eprintln!("{}", error_msg);
-                    continue;
+                    return None;
                 }
                 "webp" => match convert_to_webp(&img, quality, exif_to_use) {
                     Ok(data) => data,
@@ -374,7 +396,7 @@ pub async fn convert_images(
                             },
                         );
                         eprintln!("{}", e);
-                        continue;
+                        return None;
                     }
                 },
                 "jpeg" | "jpg" => match convert_to_jpeg(&img, quality, exif_to_use) {
@@ -390,7 +412,7 @@ pub async fn convert_images(
                             },
                         );
                         eprintln!("{}", e);
-                        continue;
+                        return None;
                     }
                 },
                 "png" => match convert_to_png(&img, quality, exif_to_use) {
@@ -406,24 +428,35 @@ pub async fn convert_images(
                             },
                         );
                         eprintln!("{}", e);
-                        continue;
+                        return None;
                     }
                 },
-                "tiff" | "avif" => {
-                    // TIFF and AVIF: Basic encoding without EXIF preservation
-                    // EXIF preservation not supported due to library compatibility issues
+                "avif" => match convert_to_avif(&img, quality, avif_speed_clone, exif_to_use) {
+                    Ok(data) => data,
+                    Err(e) => {
+                        let _ = window.emit(
+                            "conversion-progress",
+                            ConversionProgress {
+                                file_id: id.clone(),
+                                file_name: name.clone(),
+                                status: "error".to_string(),
+                                error_message: Some(e.clone()),
+                            },
+                        );
+                        eprintln!("{}", e);
+                        return None;
+                    }
+                },
+                "tiff" => {
+                    // TIFF: Basic encoding without EXIF preservation
                     let mut buffer = Vec::new();
-                    let format = if target_format == "tiff" {
-                        image::ImageFormat::Tiff
-                    } else {
-                        image::ImageFormat::Avif
-                    };
-
-                    match img.write_to(&mut std::io::Cursor::new(&mut buffer), format) {
+                    match img.write_to(
+                        &mut std::io::Cursor::new(&mut buffer),
+                        image::ImageFormat::Tiff,
+                    ) {
                         Ok(_) => buffer,
                         Err(e) => {
-                            let error_msg =
-                                format!("{} encoding failed: {}", target_format.to_uppercase(), e);
+                            let error_msg = format!("TIFF encoding failed: {}", e);
                             let _ = window.emit(
                                 "conversion-progress",
                                 ConversionProgress {
@@ -434,7 +467,7 @@ pub async fn convert_images(
                                 },
                             );
                             eprintln!("{}", error_msg);
-                            continue;
+                            return None;
                         }
                     }
                 }
@@ -455,7 +488,7 @@ pub async fn convert_images(
                                 },
                             );
                             eprintln!("{}", error_msg);
-                            continue;
+                            return None;
                         }
                     };
 
@@ -473,7 +506,7 @@ pub async fn convert_images(
                                 },
                             );
                             eprintln!("{}", error_msg);
-                            continue;
+                            return None;
                         }
                     }
                 }
@@ -492,7 +525,7 @@ pub async fn convert_images(
                     },
                 );
                 eprintln!("{}", error_msg);
-                continue;
+                return None;
             }
 
             // Preserve timestamps if requested and available
@@ -517,19 +550,41 @@ pub async fn convert_images(
                 },
             );
 
-            results.push(ConversionResult {
+            // Return conversion result
+            Some(ConversionResult {
                 original_name: name,
                 converted_name: output_name,
                 original_size,
                 converted_size: converted_data.len() as u64,
                 saved_path: output_path.to_string_lossy().to_string(),
-            });
-        }
+            })
+            })
+            .await
+            .ok()
+            .flatten();
 
-        Ok::<Vec<ConversionResult>, String>(results)
-    })
-    .await
-    .map_err(|e| format!("Task execution failed: {}", e))??;
+            // Send result with index to channel
+            let _ = result_tx.send((index, result)).await;
+        });
+    }
+
+    // Close sender to signal completion
+    drop(result_tx);
+
+    // Collect results from channel
+    let mut indexed_results = Vec::new();
+    while let Some((index, result)) = result_rx.recv().await {
+        indexed_results.push((index, result));
+    }
+
+    // Sort by index to maintain original order
+    indexed_results.sort_by_key(|(index, _)| *index);
+
+    // Extract results in order
+    let results: Vec<ConversionResult> = indexed_results
+        .into_iter()
+        .filter_map(|(_, result)| result)
+        .collect();
 
     // Mark converted files
     {

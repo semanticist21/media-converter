@@ -1,6 +1,6 @@
 import {invoke} from "@tauri-apps/api/core";
 import {open} from "@tauri-apps/plugin-dialog";
-import {useId, useState} from "react";
+import {useId} from "react";
 import {Button} from "@/components/ui/button";
 import {Checkbox} from "@/components/ui/checkbox";
 import {
@@ -18,16 +18,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {useFileList} from "@/hooks/use-file-list";
-
-type ImageFormat =
-  | "webp"
-  | "jpeg"
-  | "png"
-  | "avif"
-  | "gif"
-  | "bmp"
-  | "tiff"
-  | "error";
+import {
+  type ImageFormat,
+  useConversionSettings,
+} from "@/stores/conversion-settings-store";
 
 interface ConversionResult {
   original_name: string;
@@ -37,42 +31,31 @@ interface ConversionResult {
   saved_path: string;
 }
 
-// 포맷별 기본 quality/compression 값
-const DEFAULT_QUALITY_BY_FORMAT: Record<ImageFormat, number> = {
-  webp: 80,
-  jpeg: 80,
-  png: 6,
-  avif: 80,
-  gif: 0,
-  bmp: 0,
-  tiff: 0,
-  error: 0,
-};
-
 export function Footer() {
-  const {fileList} = useFileList();
-  const [targetFormat, setTargetFormat] = useState<ImageFormat>("webp");
-  // 포맷별 quality 값 저장
-  const [qualityByFormat, setQualityByFormat] = useState<
-    Record<ImageFormat, number>
-  >(DEFAULT_QUALITY_BY_FORMAT);
-  const [preserveExif, setPreserveExif] = useState(true);
-  const [preserveTimestamps, setPreserveTimestamps] = useState(true);
-  const [useSourceDirectory, setUseSourceDirectory] = useState(false);
+  const {fileList, convertingFiles} = useFileList();
+
+  // All settings from store
+  const {
+    targetFormat,
+    qualityByFormat,
+    avifSpeed,
+    preserveExif,
+    preserveTimestamps,
+    useSourceDirectory,
+    setTargetFormat,
+    setQualityForFormat,
+    setAvifSpeed,
+    setPreserveExif,
+    setPreserveTimestamps,
+    setUseSourceDirectory,
+  } = useConversionSettings();
+
   const exifCheckboxId = useId();
   const timestampCheckboxId = useId();
   const sourceDirectoryCheckboxId = useId();
 
   // 현재 포맷의 quality 값
   const quality = qualityByFormat[targetFormat];
-
-  // Quality 값 업데이트 (현재 포맷에만 적용)
-  const handleQualityChange = (value: number) => {
-    setQualityByFormat((prev) => ({
-      ...prev,
-      [targetFormat]: value,
-    }));
-  };
 
   // Dev mode 감지
   const isDev = import.meta.env.DEV;
@@ -95,7 +78,9 @@ export function Footer() {
             <span className="text-sm font-medium">Format:</span>
             <Select
               value={targetFormat}
-              onValueChange={(value) => setTargetFormat(value as ImageFormat)}
+              onValueChange={(value) =>
+                setTargetFormat(value as ImageFormat)
+              }
             >
               <SelectTrigger className="w-32">
                 <SelectValue />
@@ -130,7 +115,9 @@ export function Footer() {
                     </span>
                     <Slider
                       value={[quality]}
-                      onValueChange={(value) => handleQualityChange(value[0])}
+                      onValueChange={(value) =>
+                        setQualityForFormat(targetFormat, value[0])
+                      }
                       min={0}
                       max={100}
                       step={1}
@@ -144,8 +131,8 @@ export function Footer() {
                 <TooltipContent>
                   <p className="max-w-xs">
                     Image quality (0-100). Higher values produce better quality
-                    but larger file sizes. Recommended: 80-90 for photos, 90-100
-                    for graphics.
+                    but larger file sizes. <strong>Recommended: 80-90</strong>{" "}
+                    for photos, <strong>90-100</strong> for graphics.
                   </p>
                 </TooltipContent>
               </Tooltip>
@@ -160,7 +147,9 @@ export function Footer() {
                     <span className="text-sm font-medium">Compression:</span>
                     <Slider
                       value={[quality]}
-                      onValueChange={(value) => handleQualityChange(value[0])}
+                      onValueChange={(value) =>
+                        setQualityForFormat(targetFormat, value[0])
+                      }
                       min={0}
                       max={9}
                       step={1}
@@ -175,7 +164,42 @@ export function Footer() {
                   <p className="max-w-xs">
                     PNG compression level (0-9). Higher values produce smaller
                     files but take longer to compress. Lossless - no quality
-                    loss at any level.
+                    loss at any level. <strong>Recommended: 6</strong> for
+                    balanced speed/size.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+
+          {/* AVIF Speed 옵션 */}
+          {targetFormat === "avif" && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex flex-1 items-center gap-2 max-w-md">
+                    <span className="text-sm font-medium cursor-pointer">
+                      Speed:
+                    </span>
+                    <Slider
+                      value={[avifSpeed]}
+                      onValueChange={(value) => setAvifSpeed(value[0])}
+                      min={1}
+                      max={10}
+                      step={1}
+                      className="flex-1"
+                    />
+                    <output className="text-sm text-muted-foreground w-8">
+                      {avifSpeed}
+                    </output>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="max-w-xs">
+                    AVIF encoding speed (1-10). Lower values = better
+                    compression but slower. Higher values = faster but larger
+                    files. <strong>Recommended: 4-6 for balanced</strong>, 8-10
+                    for fast preview.
                   </p>
                 </TooltipContent>
               </Tooltip>
@@ -196,9 +220,7 @@ export function Footer() {
                       <Checkbox
                         id={exifCheckboxId}
                         checked={preserveExif}
-                        onCheckedChange={(checked) =>
-                          setPreserveExif(checked === true)
-                        }
+                        onCheckedChange={(checked) => setPreserveExif(checked === true)}
                       />
                       <label
                         htmlFor={exifCheckboxId}
@@ -282,7 +304,8 @@ export function Footer() {
 
           {/* Convert 버튼 */}
           <Button
-            disabled={unconvertedCount === 0}
+            disabled={unconvertedCount === 0 || convertingFiles.size > 0}
+            loading={convertingFiles.size > 0}
             onClick={async () => {
               try {
                 let outputDir: string;
@@ -308,6 +331,7 @@ export function Footer() {
                   {
                     targetFormat,
                     quality,
+                    avifSpeed,
                     preserveExif,
                     preserveTimestamps,
                     outputDir,

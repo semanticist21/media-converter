@@ -51,6 +51,16 @@ webp = "0.3"
 
 # File timestamp preservation
 filetime = "0.2"
-tokio = { version = "1.47.1", features = ["rt"] }
+tokio = { version = "1.47.1", features = ["rt", "rt-multi-thread", "sync"] }
 img-parts = "0.4.0"
+
+# CPU core count detection
+num_cpus = "1.16"
+
+# Async utilities for concurrent task handling
+futures = "0.3"
+
+# AVIF encoding with speed control (faster than image crate default)
+ravif = "0.11"
+rgb = "0.8"
 
