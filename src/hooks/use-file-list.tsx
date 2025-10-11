@@ -38,17 +38,19 @@ export interface ConversionProgress {
   file_id: string;
   file_name: string;
   status: "converting" | "completed" | "error";
+  error_message?: string; // Error message for failed conversions
 }
 
 interface FileListContextType {
   fileList: FileItemResponse[];
   isLoading: boolean;
   convertingFiles: Set<string>; // IDs of files currently being converted
-  errorFiles: Set<string>; // IDs of files that failed during conversion
+  errorFiles: Map<string, string>; // Map of file ID to error message
   addFileFromPath: (path: string) => Promise<void>;
   addFileFromUrl: (url: string) => Promise<void>;
   removeFile: (id: string) => Promise<void>;
   clearFiles: () => Promise<void>;
+  removeConvertedFiles: () => Promise<void>;
   refresh: () => Promise<void>;
 }
 
@@ -66,7 +68,7 @@ export function FileListProvider({
   const [convertingFiles, setConvertingFiles] = useState<Set<string>>(
     new Set(),
   );
-  const [errorFiles, setErrorFiles] = useState<Set<string>>(new Set());
+  const [errorFiles, setErrorFiles] = useState<Map<string, string>>(new Map());
 
   const refresh = useCallback(async () => {
     try {
@@ -82,13 +84,13 @@ export function FileListProvider({
     const unlisten = listen<ConversionProgress>(
       "conversion-progress",
       (event) => {
-        const {file_id, status} = event.payload;
+        const {file_id, status, error_message} = event.payload;
 
         if (status === "converting") {
           setConvertingFiles((prev) => new Set(prev).add(file_id));
           // Clear error state when starting new conversion
           setErrorFiles((prev) => {
-            const next = new Set(prev);
+            const next = new Map(prev);
             next.delete(file_id);
             return next;
           });
@@ -106,7 +108,7 @@ export function FileListProvider({
             next.delete(file_id);
             return next;
           });
-          setErrorFiles((prev) => new Set(prev).add(file_id));
+          setErrorFiles((prev) => new Map(prev).set(file_id, error_message || "Unknown error"));
         }
       },
     );
@@ -171,6 +173,16 @@ export function FileListProvider({
     }
   }, [refresh]);
 
+  const removeConvertedFiles = useCallback(async () => {
+    try {
+      await invoke("remove_converted_files");
+      await refresh();
+    } catch (error) {
+      console.error("Failed to remove converted files:", error);
+      throw error;
+    }
+  }, [refresh]);
+
   // Load file list on mount
   useEffect(() => {
     refresh();
@@ -187,6 +199,7 @@ export function FileListProvider({
         addFileFromUrl,
         removeFile,
         clearFiles,
+        removeConvertedFiles,
         refresh,
       }}
     >

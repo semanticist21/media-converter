@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/tooltip";
 import {useFileList} from "@/hooks/use-file-list";
 
-type ImageFormat = "webp" | "jpeg" | "png" | "avif" | "gif" | "bmp" | "tiff";
+type ImageFormat = "webp" | "jpeg" | "png" | "avif" | "gif" | "bmp" | "tiff" | "error";
 
 interface ConversionResult {
   original_name: string;
@@ -35,8 +35,13 @@ export function Footer() {
   const [quality, setQuality] = useState(80);
   const [preserveExif, setPreserveExif] = useState(true);
   const [preserveTimestamps, setPreserveTimestamps] = useState(true);
+  const [useSourceDirectory, setUseSourceDirectory] = useState(false);
   const exifCheckboxId = useId();
   const timestampCheckboxId = useId();
+  const sourceDirectoryCheckboxId = useId();
+
+  // Dev mode 감지
+  const isDev = import.meta.env.DEV;
 
   // 변환되지 않은 파일만 카운트
   const unconvertedFiles = fileList.filter((f) => !f.converted);
@@ -69,6 +74,11 @@ export function Footer() {
                 <SelectItem value="gif">GIF</SelectItem>
                 <SelectItem value="bmp">BMP</SelectItem>
                 <SelectItem value="tiff">TIFF</SelectItem>
+                {isDev && (
+                  <SelectItem value="error" className="text-red-600">
+                    Error (Test)
+                  </SelectItem>
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -204,6 +214,36 @@ export function Footer() {
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
+
+            {/* 원본 폴더에 저장 */}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id={sourceDirectoryCheckboxId}
+                      checked={useSourceDirectory}
+                      onCheckedChange={(checked) =>
+                        setUseSourceDirectory(checked === true)
+                      }
+                    />
+                    <label
+                      htmlFor={sourceDirectoryCheckboxId}
+                      className="text-sm font-medium cursor-pointer"
+                    >
+                      Use source folder
+                    </label>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="max-w-xs">
+                    Save converted images in the same folder as the original
+                    files. If unchecked, you will be asked to select an output
+                    folder.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
 
           {/* Convert 버튼 */}
@@ -211,14 +251,22 @@ export function Footer() {
             disabled={unconvertedCount === 0}
             onClick={async () => {
               try {
-                // 저장 폴더 선택
-                const outputDir = await open({
-                  directory: true,
-                  multiple: false,
-                  title: "Select output folder for converted images",
-                });
+                let outputDir: string;
 
-                if (!outputDir || Array.isArray(outputDir)) return;
+                if (useSourceDirectory) {
+                  // 원본 폴더 사용 - 특수 값 전송
+                  outputDir = "USE_SOURCE_DIR";
+                } else {
+                  // 저장 폴더 선택
+                  const selected = await open({
+                    directory: true,
+                    multiple: false,
+                    title: "Select output folder for converted images",
+                  });
+
+                  if (!selected || Array.isArray(selected)) return;
+                  outputDir = selected;
+                }
 
                 // 변환 실행
                 const results = await invoke<ConversionResult[]>(
@@ -233,12 +281,8 @@ export function Footer() {
                 );
 
                 console.log("Conversion complete:", results);
-                alert(
-                  `Successfully converted ${results.length} image(s) to ${targetFormat.toUpperCase()}`,
-                );
               } catch (error) {
                 console.error("Conversion failed:", error);
-                alert(`Conversion failed: ${error}`);
               }
             }}
             className="ml-auto"

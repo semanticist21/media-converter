@@ -12,6 +12,12 @@ import {
   X,
 } from "lucide-react";
 import {Button} from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {type FileItemResponse, useFileList} from "@/hooks/use-file-list";
 import {
   formatExtensionDisplay,
@@ -26,7 +32,8 @@ interface FileListItemProps {
 export function FileListItem({file}: FileListItemProps) {
   const {removeFile, convertingFiles, errorFiles} = useFileList();
   const isConverting = convertingFiles.has(file.id);
-  const hasError = errorFiles.has(file.id);
+  const errorMessage = errorFiles.get(file.id);
+  const hasError = errorMessage !== undefined;
 
   const extension = getFileExtension(file.name);
   const displayExt = formatExtensionDisplay(extension);
@@ -52,25 +59,34 @@ export function FileListItem({file}: FileListItemProps) {
         <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground/70">
           <span>{filesize(file.size)}</span>
           {file.exif && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-blue-600 dark:bg-blue-400/10 dark:text-blue-400">
+            <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-blue-600 dark:bg-blue-400/10 dark:text-blue-400 select-none">
               <Camera className="size-3" />
               <span className="text-[10px] font-medium">EXIF</span>
             </span>
           )}
           {isConverting && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-amber-600 dark:bg-amber-400/10 dark:text-amber-400">
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-amber-600 dark:bg-amber-400/10 dark:text-amber-400 select-none">
               <Loader2 className="size-3 animate-spin" />
               <span className="text-[10px] font-medium">Converting</span>
             </span>
           )}
           {hasError && !isConverting && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-red-600 dark:bg-red-400/10 dark:text-red-400">
-              <AlertCircle className="size-3" />
-              <span className="text-[10px] font-medium">Error</span>
-            </span>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-red-600 dark:bg-red-400/10 dark:text-red-400 select-none">
+                    <AlertCircle className="size-3" />
+                    <span className="text-[10px] font-medium">Error</span>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="max-w-xs text-xs">{errorMessage}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
           {file.converted && !isConverting && !hasError && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-green-600 dark:bg-green-400/10 dark:text-green-400">
+            <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-green-600 dark:bg-green-400/10 dark:text-green-400 select-none">
               <CheckCircle2 className="size-3" />
               <span className="text-[10px] font-medium">Converted</span>
             </span>
