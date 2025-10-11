@@ -9,8 +9,8 @@ export function ClearButton() {
       onClick={() => console.log("Clear completed clicked")}
       aria-label="Clear all completed conversions"
     >
-      <Trash2 className="fill-slate-100 text-slate-500" />
-      Clear
+      <Trash2 className="size-4 text-slate-400" />
+      Clear Done
     </Button>
   );
 }

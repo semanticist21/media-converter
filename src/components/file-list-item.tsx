@@ -1,7 +1,12 @@
 import dayjs from "dayjs";
 import {filesize} from "filesize";
-import {FileImage, X} from "lucide-react";
+import {X} from "lucide-react";
 import {Button} from "@/components/ui/button";
+import {
+  formatExtensionDisplay,
+  getExtensionStyle,
+  getFileExtension,
+} from "@/lib/file-utils";
 import type {FileItem} from "@/stores/file-store";
 import {useFileStore} from "@/stores/file-store";
 
@@ -12,11 +17,17 @@ interface FileListItemProps {
 export function FileListItem({file}: FileListItemProps) {
   const removeFile = useFileStore((state) => state.removeFile);
 
+  const extension = getFileExtension(file.name);
+  const displayExt = formatExtensionDisplay(extension);
+  const extStyle = getExtensionStyle(extension);
+
   return (
-    <div className="flex items-center gap-4 border-b bg-card p-4 text-card-foreground transition-colors hover:bg-accent/50">
-      {/* 파일 아이콘 */}
-      <div className="flex size-12 shrink-0 items-center justify-center rounded-md bg-muted">
-        <FileImage className="size-6 text-muted-foreground" />
+    <div className="flex items-center gap-4 border-b bg-card p-4 transition-colors hover:bg-accent/60">
+      {/* 파일 확장자 배지 */}
+      <div
+        className={`flex size-12 shrink-0 items-center justify-center rounded-md ${extStyle}`}
+      >
+        <span className="text-xs font-semibold">{displayExt}</span>
       </div>
 
       {/* 파일 정보 */}

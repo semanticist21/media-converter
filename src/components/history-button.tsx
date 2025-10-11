@@ -9,7 +9,7 @@ export function HistoryButton() {
       onClick={() => console.log("History clicked")}
       aria-label="View conversion history"
     >
-      <ScrollText className="fill-orange-50 text-orange-300" />
+      <ScrollText className="size-4 text-orange-500" />
       History
     </Button>
   );

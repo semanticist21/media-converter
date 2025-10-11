@@ -123,4 +123,10 @@
   button {
     cursor: pointer;
   }
+
+  /* Disable transitions during theme change */
+  .no-transition,
+  .no-transition * {
+    transition: none !important;
+  }
 }
